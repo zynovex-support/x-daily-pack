@@ -1,0 +1,29 @@
+# Scoring Test Cases for Promptfoo
+# Tests the LLM scoring prompt with golden examples
+
+- description: "High-impact official announcement should score 24+"
+  vars:
+    items: |
+      [{"id": 0, "title": "OpenAI发布GPT-5", "snippet": "OpenAI今日正式发布GPT-5模型，性能全面超越GPT-4", "source": "OpenAI Blog", "tier": "A", "source_type": "RSS"}]
+  assert:
+    - type: is-json
+    - type: javascript
+      value: |
+        const data = JSON.parse(output);
+        return data.items && data.items[0] && data.items[0].total >= 24;
+    - type: javascript
+      value: |
+        const data = JSON.parse(output);
+        return data.items[0].category === 'announcement';
+
+- description: "GitHub tool should score moderate (15-23)"
+  vars:
+    items: |
+      [{"id": 0, "title": "New AI code assistant", "snippet": "A new open source AI coding tool", "source": "GitHub Trending", "tier": "C", "source_type": "RSS"}]
+  assert:
+    - type: is-json
+    - type: javascript
+      value: |
+        const data = JSON.parse(output);
+        const score = data.items[0].total;
+        return score >= 10 && score <= 23;

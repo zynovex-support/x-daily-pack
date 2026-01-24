@@ -1,0 +1,42 @@
+services:
+  n8n:
+    image: n8nio/n8n:latest
+    container_name: n8n-local
+    restart: always
+    ports:
+      - "5678:5678"
+    volumes:
+      - ${HOME}/.n8n:/home/node/.n8n
+    env_file:
+      - .env
+    environment:
+      - TZ=UTC
+      - N8N_BLOCK_ENV_ACCESS_IN_NODE=false
+      - CONFIG_SERVER_URL=http://config-server:3001
+    depends_on:
+      - config-server
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:5678/healthz"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  config-server:
+    image: node:18-alpine
+    container_name: config-server
+    restart: always
+    working_dir: /app
+    volumes:
+      - ./scripts:/app/scripts:ro
+      - ./config:/app/config
+    command: node scripts/config-server.js
+    ports:
+      - "3001:3001"
+    environment:
+      - CONFIG_SERVER_PORT=3001
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:3001/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3

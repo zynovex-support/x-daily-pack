@@ -1,0 +1,104 @@
+{
+  "description": "X/Twitter 搜索配置 - 偏重应用型/实践型内容",
+  "time_window": "last_7_days",
+  "keywords": [
+    {
+      "id": "ai-agents",
+      "query": "(AI agent OR AI agents OR autonomous agent OR agentic) -is:retweet -is:reply lang:en",
+      "description": "AI智能体核心讨论"
+    },
+    {
+      "id": "ai-workflow",
+      "query": "(AI workflow OR AI automation OR AI productivity OR \"AI tools\") -is:retweet -is:reply lang:en",
+      "description": "AI工具和工作流"
+    },
+    {
+      "id": "llm-prompts",
+      "query": "(LLM OR \"prompt engineering\" OR \"Claude\" OR \"GPT-4\" OR \"ChatGPT\") (tutorial OR guide OR tips) -is:retweet -is:reply lang:en",
+      "description": "LLM和提示工程"
+    },
+    {
+      "id": "ai-built",
+      "query": "(\"I built\" OR \"I made\" OR \"just shipped\" OR \"just launched\") (AI OR GPT OR Claude OR agent) -is:retweet -is:reply lang:en",
+      "description": "开发者作品分享"
+    },
+    {
+      "id": "ai-freebies",
+      "query": "(\"free tier\" OR \"free credits\" OR \"free API\" OR \"open source\") (AI OR LLM OR GPT OR Claude) -is:retweet -is:reply lang:en",
+      "description": "免费资源/薅羊毛"
+    },
+    {
+      "id": "buildinpublic",
+      "query": "(#buildinpublic OR #indiehackers) (AI OR GPT OR Claude OR LLM) -is:retweet -is:reply lang:en",
+      "description": "独立开发者AI项目"
+    },
+    {
+      "id": "ai-tips",
+      "query": "(\"pro tip\" OR \"life hack\" OR \"game changer\") (AI OR ChatGPT OR Claude) -is:retweet -is:reply lang:en",
+      "description": "AI使用技巧"
+    }
+  ],
+  "accounts": [
+    {
+      "username": "AnthropicAI",
+      "description": "Anthropic官方，Claude相关更新"
+    },
+    {
+      "username": "OpenAI",
+      "description": "OpenAI官方，GPT系列和AI研究"
+    },
+    {
+      "username": "LangChainAI",
+      "description": "LangChain框架，AI应用开发"
+    },
+    {
+      "username": "hwchase17",
+      "description": "LangChain创始人，AI agents专家"
+    },
+    {
+      "username": "karpathy",
+      "description": "前OpenAI/Tesla AI负责人，深度学习教育"
+    },
+    {
+      "username": "sama",
+      "description": "OpenAI CEO，AI行业动态"
+    },
+    {
+      "username": "ylecun",
+      "description": "Meta AI首席科学家，AI研究前沿"
+    },
+    {
+      "username": "goodside",
+      "description": "Prompt engineering专家，实用技巧"
+    },
+    {
+      "username": "simonw",
+      "description": "开发者，AI工具和应用案例"
+    },
+    {
+      "username": "swyx",
+      "description": "AI工程师，AI应用和工作流"
+    },
+    {
+      "username": "nvidia",
+      "description": "Nvidia官方，GPU/AI芯片/产品发布"
+    },
+    {
+      "username": "awscloud",
+      "description": "AWS官方，云AI服务更新"
+    },
+    {
+      "username": "Microsoft",
+      "description": "微软官方，Copilot/Azure AI"
+    },
+    {
+      "username": "GoogleAI",
+      "description": "Google AI官方，Gemini/研究更新"
+    },
+    {
+      "username": "ycombinator",
+      "description": "YC官方，创业/投资趋势"
+    }
+  ],
+  "account_query": "from:AnthropicAI OR from:OpenAI OR from:LangChainAI OR from:hwchase17 OR from:karpathy OR from:sama OR from:ylecun OR from:goodside OR from:simonw OR from:swyx OR from:nvidia OR from:awscloud OR from:Microsoft OR from:GoogleAI OR from:ycombinator -is:retweet -giveaway -airdrop"
+}
