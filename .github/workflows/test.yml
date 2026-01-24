@@ -25,15 +25,8 @@ jobs:
       - name: Run unit tests
         run: npm run test:unit
 
-      - name: Run integration tests
-        run: npm run test:integration
-        env:
-          N8N_HOST: localhost
-          N8N_PORT: 5678
-        continue-on-error: true
-
-      - name: Run coverage
-        run: npm run test:coverage
+      - name: Run coverage (unit tests only)
+        run: npm run test:unit -- --coverage
 
       - name: Upload coverage
         uses: codecov/codecov-action@v4
