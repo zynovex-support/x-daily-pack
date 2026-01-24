@@ -1,8 +1,9 @@
 # X Daily Pack - 项目总结 (CLAUDE.md)
 
 **最后更新**: 2026-01-24
-**项目状态**: ✅ Phase 1-3 全部完成
+**项目状态**: ✅ Phase 1-3 全部完成 + 测试架构升级
 **版本**: v5-fixed (18节点主流程 + 4节点审批流程)
+**仓库**: https://github.com/zynovex-support/x-daily-pack
 
 ---
 
@@ -102,10 +103,30 @@ FEEDBACK_LEARNING_ENABLED=true
 
 ## 🧪 测试
 
+### 测试框架
+- **Vitest**: 现代测试框架，60个测试用例
+- **MSW**: Mock Service Worker，API模拟
+- **Promptfoo**: LLM输出质量测试
+
+### 测试命令
 ```bash
-node tests/run-all.js  # 59个测试用例
+npm test              # 运行所有测试
+npm run test:unit     # 单元测试 (38个)
+npm run test:coverage # 覆盖率报告
+npm run test:ai       # Promptfoo AI测试
+```
+
+### 测试结构
+```
+tests/
+├── suites/unit/        # 单元测试 (6个文件)
+├── suites/integration/ # 集成测试 (4个文件)
+├── suites/e2e/         # E2E测试 (1个文件)
+├── setup/mocks/        # MSW mock handlers
+├── fixtures/           # 测试数据
+└── ai/                 # Promptfoo配置
 ```
 
 ---
 
-**最后更新**: 2026-01-24 | Phase 3 完成
+**最后更新**: 2026-01-24 | Phase 3 完成 + 测试架构升级
