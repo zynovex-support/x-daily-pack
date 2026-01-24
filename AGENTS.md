@@ -2,12 +2,16 @@
 
 AI 行业日报自动化系统 - 采集、去重、评分、推送到 Slack/Telegram，审批后发布到 X/Twitter。
 
+**仓库**: https://github.com/zynovex-support/x-daily-pack
+
 ## 技术栈
 
 - **工作流**: n8n (Docker 自托管, port 5678)
 - **LLM**: OpenAI gpt-4o-mini
 - **Embedding**: text-embedding-3-small
 - **数据源**: 34 RSS + 6 News API + X/Twitter
+- **测试**: Vitest + MSW + Promptfoo
+- **CI/CD**: GitHub Actions
 
 ## 核心文件
 
@@ -31,17 +35,15 @@ config/
 ## 常用命令
 
 ```bash
-# 启动 n8n
-docker run -d --name n8n-local -p 5678:5678 \
-  -v $HOME/.n8n:/home/node/.n8n \
-  --env-file /home/henry/x/.env \
-  --restart=always n8nio/n8n:latest
+# 测试
+npm test              # 运行所有测试
+npm run test:unit     # 单元测试
+npm run test:coverage # 覆盖率报告
 
-# 重启
+# n8n
+docker-compose up -d  # 启动
+docker-compose down   # 停止
 docker restart n8n-local
-
-# 运行测试
-node tests/run-all.js
 ```
 
 ## 关键参数
