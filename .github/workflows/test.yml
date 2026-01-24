@@ -40,3 +40,7 @@ jobs:
         with:
           files: ./coverage/coverage-final.json
           fail_ci_if_error: false
+
+      - name: Security audit
+        run: npm audit --audit-level=high
+        continue-on-error: true
