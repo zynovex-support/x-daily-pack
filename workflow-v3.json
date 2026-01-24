@@ -1,0 +1,352 @@
+[
+  {
+    "updatedAt": "2026-01-19T17:02:59.000Z",
+    "createdAt": "2026-01-19T17:00:06.587Z",
+    "id": "0yeGunCd6jz5PAEA",
+    "name": "X Daily Pack - v3 (12 Sources + Cross-Day Dedupe)",
+    "description": null,
+    "active": true,
+    "isArchived": false,
+    "nodes": [
+      {
+        "parameters": {},
+        "name": "Manual Trigger",
+        "type": "n8n-nodes-base.manualTrigger",
+        "typeVersion": 1,
+        "position": [
+          120,
+          300
+        ],
+        "id": "manual-trigger"
+      },
+      {
+        "parameters": {
+          "rule": {
+            "interval": [
+              {
+                "field": "cronExpression",
+                "expression": "0 8 * * *"
+              }
+            ]
+          }
+        },
+        "name": "Trigger 8AM",
+        "type": "n8n-nodes-base.scheduleTrigger",
+        "typeVersion": 1.1,
+        "position": [
+          240,
+          300
+        ],
+        "id": "trigger"
+      },
+      {
+        "parameters": {
+          "jsCode": "// RSS Fetch Node - Dynamically fetches all configured feeds\n// This replaces multiple hardcoded RSS nodes with a single dynamic fetcher\n// Uses n8n's httpRequest helper instead of Node.js http/https modules\n\n// RSS feed configuration (embedded from config/rss-feeds.json)\n// To update: copy feeds array from config/rss-feeds.json\nconst feeds = [\n  { id: \"openai-news\", name: \"OpenAI News\", url: \"https://openai.com/news/rss.xml\", tier: \"A\" },\n  { id: \"deepmind-blog\", name: \"DeepMind Blog\", url: \"https://deepmind.google/blog/rss.xml\", tier: \"A\" },\n  { id: \"google-ai-blog\", name: \"Google AI Blog\", url: \"https://blog.google/technology/ai/rss/\", tier: \"A\" },\n  { id: \"langchain-blog\", name: \"LangChain Blog\", url: \"https://blog.langchain.dev/rss/\", tier: \"A\" },\n  { id: \"huggingface-blog\", name: \"Hugging Face Blog\", url: \"https://huggingface.co/blog/feed.xml\", tier: \"A\" },\n  { id: \"simonwillison\", name: \"Simon Willison\", url: \"https://simonwillison.net/atom/everything/\", tier: \"B\" },\n  { id: \"latent-space\", name: \"Latent Space\", url: \"https://www.latent.space/feed\", tier: \"B\" },\n  { id: \"interconnects\", name: \"Interconnects\", url: \"https://www.interconnects.ai/feed\", tier: \"B\" },\n  { id: \"lilian-weng\", name: \"Lil'Log (Lilian Weng)\", url: \"https://lilianweng.github.io/index.xml\", tier: \"B\" },\n  { id: \"hackernews-best\", name: \"Hacker News - Best\", url: \"https://hnrss.org/best?count=20\", tier: \"C\" },\n  { id: \"hackernews-ai\", name: \"Hacker News - AI\", url: \"https://hnrss.org/newest?q=AI+OR+GPT+OR+LLM&count=15\", tier: \"C\" },\n  { id: \"google-news-ai\", name: \"Google News - AI\", url: \"https://news.google.com/rss/search?q=artificial+intelligence+OR+AI&hl=en-US&gl=US&ceid=US:en\", tier: \"D\" }\n];\n\nconst maxItemsPerFeed = Number.parseInt($env.RSS_MAX_ITEMS_PER_FEED || '15', 10);\nconst timeoutMs = Number.parseInt($env.RSS_FETCH_TIMEOUT_MS || '15000', 10);\n\nconst parseRssDate = (dateStr) => {\n  if (!dateStr) return null;\n  try {\n    const d = new Date(dateStr);\n    return isNaN(d.getTime()) ? null : d.toISOString();\n  } catch (e) {\n    return null;\n  }\n};\n\nconst extractText = (xml, tag) => {\n  const regex = new RegExp(`<${tag}[^>]*>([\\\\s\\\\S]*?)</${tag}>`, 'i');\n  const match = xml.match(regex);\n  if (!match) return '';\n  let text = match[1].replace(/<!\\[CDATA\\[([\\s\\S]*?)\\]\\]>/g, '$1');\n  text = text.replace(/<[^>]+>/g, '');\n  text = text.replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '\"').replace(/&#39;/g, \"'\");\n  return text.trim();\n};\n\nconst extractLink = (itemXml) => {\n  const hrefMatch = itemXml.match(/<link[^>]+href=[\"']([^\"']+)[\"']/i);\n  if (hrefMatch) return hrefMatch[1];\n  return extractText(itemXml, 'link');\n};\n\nconst parseItems = (xml, feedName, tier) => {\n  const items = [];\n  const itemRegex = /<(item|entry)[\\s>]([\\s\\S]*?)<\\/\\1>/gi;\n  let match;\n\n  while ((match = itemRegex.exec(xml)) !== null && items.length < maxItemsPerFeed) {\n    const itemXml = match[2];\n    const title = extractText(itemXml, 'title');\n    const link = extractLink(itemXml);\n    const description = extractText(itemXml, 'description') || extractText(itemXml, 'summary') || extractText(itemXml, 'content');\n    const pubDate = extractText(itemXml, 'pubDate') || extractText(itemXml, 'published') || extractText(itemXml, 'updated');\n\n    if (title && link) {\n      items.push({\n        title: title.substring(0, 200),\n        url: link,\n        source: feedName,\n        sourceType: 'RSS',\n        tier: tier,\n        snippet: description.substring(0, 300),\n        publishedAt: parseRssDate(pubDate)\n      });\n    }\n  }\n\n  return items;\n};\n\nconst allItems = [];\nconst errors = [];\n\nconst fetchPromises = feeds.map(async (feed) => {\n  try {\n    const response = await this.helpers.httpRequest({\n      method: 'GET',\n      url: feed.url,\n      headers: {\n        'User-Agent': 'n8n-rss-fetcher/1.0',\n        'Accept': 'application/rss+xml, application/atom+xml, application/xml, text/xml'\n      },\n      timeout: timeoutMs,\n      returnFullResponse: false\n    });\n\n    const xml = typeof response === 'string' ? response : JSON.stringify(response);\n    const items = parseItems(xml, feed.name, feed.tier);\n    return { feed: feed.id, items, error: null };\n  } catch (error) {\n    return { feed: feed.id, items: [], error: error.message };\n  }\n});\n\nconst results = await Promise.all(fetchPromises);\n\nresults.forEach(result => {\n  if (result.error) {\n    errors.push({ feed: result.feed, error: result.error });\n  } else {\n    allItems.push(...result.items);\n  }\n});\n\nconst stats = {\n  total_feeds: feeds.length,\n  successful_feeds: results.filter(r => !r.error).length,\n  failed_feeds: errors.length,\n  total_items: allItems.length,\n  errors: errors\n};\nconsole.log('RSS Fetch Stats:', JSON.stringify(stats));\n\nif (allItems.length === 0 && errors.length === feeds.length) {\n  throw new Error(`All RSS feeds failed: ${JSON.stringify(errors)}`);\n}\n\nreturn allItems.map(item => ({ json: item }));\n"
+        },
+        "name": "RSS Fetch All",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          440,
+          200
+        ],
+        "id": "rss-fetch"
+      },
+      {
+        "parameters": {
+          "jsCode": "// X Keyword Search Node - Calls Rube MCP (Streamable HTTP)\n// Searches X/Twitter using RUBE_MULTI_EXECUTE_TOOL\n\nconst rubeUrl = $env.RUBE_MCP_URL || 'https://rube.app/mcp';\nconst rubeToken = $env.RUBE_AUTH_TOKEN || $env.RUBE_API_TOKEN;\n\nif (!rubeToken) {\n  throw new Error('Missing Rube token. Set RUBE_AUTH_TOKEN (or RUBE_API_TOKEN).');\n}\n\nconst twitterToolSlug = 'TWITTER_RECENT_SEARCH';\n\n// Read keyword queries from config (embedded for portability)\nconst keywordQueries = [\n  { id: 'ai-agents', query: '(AI agent OR AI agents OR autonomous agent OR agentic) -is:retweet -is:reply lang:en' },\n  { id: 'ai-workflow', query: '(AI workflow OR AI automation OR AI productivity OR \"AI tools\") -is:retweet -is:reply lang:en' },\n  { id: 'llm-prompts', query: '(LLM OR \"prompt engineering\" OR \"Claude\" OR \"GPT-4\" OR \"ChatGPT\") (tutorial OR guide OR tips) -is:retweet -is:reply lang:en' },\n  { id: 'ai-applications', query: '(\"built with AI\" OR \"AI-powered\" OR \"using Claude\" OR \"using GPT\") -is:retweet -is:reply lang:en' },\n  { id: 'ai-research', query: '(AI research OR \"AI breakthrough\" OR \"new AI model\") -is:retweet -is:reply lang:en' }\n];\n\nlet mcpProtocolVersion = '2025-06-18';\nlet mcpSessionId = null;\nlet requestId = 1;\n\nconst allTweets = [];\nconst seenTweetIds = new Set();\n\nconst getHeader = (headers, name) => {\n  if (!headers) return null;\n  const key = Object.keys(headers).find(k => k.toLowerCase() === name.toLowerCase());\n  return key ? headers[key] : null;\n};\n\nconst parseSse = (text) => {\n  const lines = text.split('\\n');\n  for (let i = lines.length - 1; i >= 0; i -= 1) {\n    const line = lines[i].trim();\n    if (!line.startsWith('data:')) continue;\n    const payload = line.slice(5).trim();\n    if (!payload || payload === '[DONE]') continue;\n    try {\n      return JSON.parse(payload);\n    } catch (err) {\n      continue;\n    }\n  }\n  return null;\n};\n\nconst parseBody = (body) => {\n  if (!body) return null;\n  if (typeof body === 'string') {\n    const trimmed = body.trim();\n    if (trimmed.startsWith('{')) {\n      try {\n        return JSON.parse(trimmed);\n      } catch (err) {\n        return null;\n      }\n    }\n    return parseSse(trimmed);\n  }\n  return body;\n};\n\nconst findTweetsEnvelope = (obj) => {\n  if (!obj || typeof obj !== 'object') return null;\n  if (Array.isArray(obj.data)) return obj;\n  if (obj.data && Array.isArray(obj.data.data)) return obj.data;\n  return null;\n};\n\nconst findMultiExecuteEnvelope = (obj) => {\n  const results = obj?.data?.data?.results;\n  if (!Array.isArray(results)) return null;\n  for (const result of results) {\n    const envelope = findTweetsEnvelope(result?.response?.data);\n    if (envelope) return envelope;\n  }\n  return null;\n};\n\nconst extractTwitterPayload = (response) => {\n  const root = response?.result || response;\n  const candidates = [];\n  if (root?.data) candidates.push(root.data);\n  if (Array.isArray(root?.content)) {\n    root.content.forEach((entry) => {\n      if (entry?.json) candidates.push(entry.json);\n      if (entry?.data) candidates.push(entry.data);\n      if (entry?.text) {\n        try {\n          candidates.push(JSON.parse(entry.text));\n        } catch (err) {\n          // ignore parse errors\n        }\n      }\n    });\n  }\n  candidates.push(root);\n  for (const candidate of candidates) {\n    const envelope = findTweetsEnvelope(candidate);\n    if (envelope) return envelope;\n    const multiEnvelope = findMultiExecuteEnvelope(candidate);\n    if (multiEnvelope) return multiEnvelope;\n  }\n  return null;\n};\n\nconst mcpPost = async (payload, includeProtocolHeader = true) => {\n  const headers = {\n    Authorization: `Bearer ${rubeToken}`,\n    'Content-Type': 'application/json',\n    Accept: 'application/json, text/event-stream'\n  };\n  if (includeProtocolHeader && mcpProtocolVersion) headers['MCP-Protocol-Version'] = mcpProtocolVersion;\n  if (includeProtocolHeader && mcpSessionId) headers['Mcp-Session-Id'] = mcpSessionId;\n\n  const response = await this.helpers.httpRequest({\n    method: 'POST',\n    url: rubeUrl,\n    headers,\n    body: payload,\n    returnFullResponse: true\n  });\n\n  const rawBody = response?.body ?? response;\n  const parsedBody = parseBody(rawBody);\n  return {\n    body: parsedBody || rawBody,\n    headers: response?.headers\n  };\n};\n\nconst initializeMcp = async () => {\n  const initPayload = {\n    jsonrpc: '2.0',\n    id: requestId++,\n    method: 'initialize',\n    params: {\n      protocolVersion: mcpProtocolVersion,\n      capabilities: {},\n      clientInfo: { name: 'n8n', version: '1.0.0' }\n    }\n  };\n\n  const initResponse = await mcpPost(initPayload, false);\n  const initResult = initResponse.body?.result;\n  if (initResult?.protocolVersion) {\n    mcpProtocolVersion = initResult.protocolVersion;\n  }\n\n  const sessionHeader = getHeader(initResponse.headers, 'mcp-session-id');\n  if (sessionHeader) {\n    mcpSessionId = Array.isArray(sessionHeader) ? sessionHeader[0] : sessionHeader;\n  }\n\n  await mcpPost({ jsonrpc: '2.0', method: 'notifications/initialized' }, true);\n};\n\ntry {\n  await initializeMcp();\n\n  for (const keywordQuery of keywordQueries) {\n    const payload = {\n      jsonrpc: '2.0',\n      id: requestId++,\n      method: 'tools/call',\n      params: {\n        name: 'RUBE_MULTI_EXECUTE_TOOL',\n        arguments: {\n          tools: [\n            {\n              tool_slug: twitterToolSlug,\n              arguments: {\n                query: keywordQuery.query,\n                max_results: 20,\n                tweet_fields: ['created_at', 'public_metrics', 'author_id'],\n                expansions: ['author_id'],\n                user_fields: ['username', 'name']\n              }\n            }\n          ]\n        }\n      }\n    };\n\n    const response = await mcpPost(payload, true);\n    const twitterPayload = extractTwitterPayload(response.body);\n    const tweets = twitterPayload?.data || [];\n    const users = twitterPayload?.includes?.users || [];\n\n    const userMap = {};\n    users.forEach((user) => {\n      userMap[user.id] = user;\n    });\n\n    tweets.forEach((tweet) => {\n      if (seenTweetIds.has(tweet.id)) return;\n      seenTweetIds.add(tweet.id);\n      const author = userMap[tweet.author_id] || {};\n      const username = author.username || 'unknown';\n      allTweets.push({\n        title: tweet.text.substring(0, 100) + (tweet.text.length > 100 ? '...' : ''),\n        url: `https://twitter.com/${username}/status/${tweet.id}`,\n        source: `X - ${keywordQuery.id}`,\n        snippet: tweet.text,\n        publishedAt: tweet.created_at,\n        author: username,\n        metrics: tweet.public_metrics || {}\n      });\n    });\n  }\n\n  return allTweets.map(tweet => ({ json: tweet }));\n} catch (error) {\n  throw new Error(`X keyword search failed: ${error.message}`);\n}\n"
+        },
+        "name": "X Keyword Search",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          440,
+          350
+        ],
+        "id": "x-keyword"
+      },
+      {
+        "parameters": {
+          "jsCode": "// X Account Timeline Node - Calls Rube MCP (Streamable HTTP)\n// Fetches recent tweets from configured accounts using RUBE_MULTI_EXECUTE_TOOL\n\nconst rubeUrl = $env.RUBE_MCP_URL || 'https://rube.app/mcp';\nconst rubeToken = $env.RUBE_AUTH_TOKEN || $env.RUBE_API_TOKEN;\n\nif (!rubeToken) {\n  throw new Error('Missing Rube token. Set RUBE_AUTH_TOKEN (or RUBE_API_TOKEN).');\n}\n\nconst twitterToolSlug = 'TWITTER_RECENT_SEARCH';\n\n// Combined account query\nconst accountQuery = 'from:AnthropicAI OR from:OpenAI OR from:LangChainAI OR from:hwchase17 OR from:karpathy OR from:sama OR from:ylecun OR from:goodside OR from:simonw OR from:swyx -is:retweet -giveaway -airdrop';\n\nlet mcpProtocolVersion = '2025-06-18';\nlet mcpSessionId = null;\nlet requestId = 1;\n\nconst allTweets = [];\nconst seenTweetIds = new Set();\n\nconst getHeader = (headers, name) => {\n  if (!headers) return null;\n  const key = Object.keys(headers).find(k => k.toLowerCase() === name.toLowerCase());\n  return key ? headers[key] : null;\n};\n\nconst parseSse = (text) => {\n  const lines = text.split('\\n');\n  for (let i = lines.length - 1; i >= 0; i -= 1) {\n    const line = lines[i].trim();\n    if (!line.startsWith('data:')) continue;\n    const payload = line.slice(5).trim();\n    if (!payload || payload === '[DONE]') continue;\n    try {\n      return JSON.parse(payload);\n    } catch (err) {\n      continue;\n    }\n  }\n  return null;\n};\n\nconst parseBody = (body) => {\n  if (!body) return null;\n  if (typeof body === 'string') {\n    const trimmed = body.trim();\n    if (trimmed.startsWith('{')) {\n      try {\n        return JSON.parse(trimmed);\n      } catch (err) {\n        return null;\n      }\n    }\n    return parseSse(trimmed);\n  }\n  return body;\n};\n\nconst findTweetsEnvelope = (obj) => {\n  if (!obj || typeof obj !== 'object') return null;\n  if (Array.isArray(obj.data)) return obj;\n  if (obj.data && Array.isArray(obj.data.data)) return obj.data;\n  return null;\n};\n\nconst findMultiExecuteEnvelope = (obj) => {\n  const results = obj?.data?.data?.results;\n  if (!Array.isArray(results)) return null;\n  for (const result of results) {\n    const envelope = findTweetsEnvelope(result?.response?.data);\n    if (envelope) return envelope;\n  }\n  return null;\n};\n\nconst extractTwitterPayload = (response) => {\n  const root = response?.result || response;\n  const candidates = [];\n  if (root?.data) candidates.push(root.data);\n  if (Array.isArray(root?.content)) {\n    root.content.forEach((entry) => {\n      if (entry?.json) candidates.push(entry.json);\n      if (entry?.data) candidates.push(entry.data);\n      if (entry?.text) {\n        try {\n          candidates.push(JSON.parse(entry.text));\n        } catch (err) {\n          // ignore parse errors\n        }\n      }\n    });\n  }\n  candidates.push(root);\n  for (const candidate of candidates) {\n    const envelope = findTweetsEnvelope(candidate);\n    if (envelope) return envelope;\n    const multiEnvelope = findMultiExecuteEnvelope(candidate);\n    if (multiEnvelope) return multiEnvelope;\n  }\n  return null;\n};\n\nconst mcpPost = async (payload, includeProtocolHeader = true) => {\n  const headers = {\n    Authorization: `Bearer ${rubeToken}`,\n    'Content-Type': 'application/json',\n    Accept: 'application/json, text/event-stream'\n  };\n  if (includeProtocolHeader && mcpProtocolVersion) headers['MCP-Protocol-Version'] = mcpProtocolVersion;\n  if (includeProtocolHeader && mcpSessionId) headers['Mcp-Session-Id'] = mcpSessionId;\n\n  const response = await this.helpers.httpRequest({\n    method: 'POST',\n    url: rubeUrl,\n    headers,\n    body: payload,\n    returnFullResponse: true\n  });\n\n  const rawBody = response?.body ?? response;\n  const parsedBody = parseBody(rawBody);\n  return {\n    body: parsedBody || rawBody,\n    headers: response?.headers\n  };\n};\n\nconst initializeMcp = async () => {\n  const initPayload = {\n    jsonrpc: '2.0',\n    id: requestId++,\n    method: 'initialize',\n    params: {\n      protocolVersion: mcpProtocolVersion,\n      capabilities: {},\n      clientInfo: { name: 'n8n', version: '1.0.0' }\n    }\n  };\n\n  const initResponse = await mcpPost(initPayload, false);\n  const initResult = initResponse.body?.result;\n  if (initResult?.protocolVersion) {\n    mcpProtocolVersion = initResult.protocolVersion;\n  }\n\n  const sessionHeader = getHeader(initResponse.headers, 'mcp-session-id');\n  if (sessionHeader) {\n    mcpSessionId = Array.isArray(sessionHeader) ? sessionHeader[0] : sessionHeader;\n  }\n\n  await mcpPost({ jsonrpc: '2.0', method: 'notifications/initialized' }, true);\n};\n\ntry {\n  await initializeMcp();\n\n  const payload = {\n    jsonrpc: '2.0',\n    id: requestId++,\n    method: 'tools/call',\n    params: {\n      name: 'RUBE_MULTI_EXECUTE_TOOL',\n      arguments: {\n        tools: [\n          {\n            tool_slug: twitterToolSlug,\n            arguments: {\n              query: accountQuery,\n              max_results: 30,\n              tweet_fields: ['created_at', 'public_metrics', 'author_id'],\n              expansions: ['author_id'],\n              user_fields: ['username', 'name']\n            }\n          }\n        ]\n      }\n    }\n  };\n\n  const response = await mcpPost(payload, true);\n  const twitterPayload = extractTwitterPayload(response.body);\n  const tweets = twitterPayload?.data || [];\n  const users = twitterPayload?.includes?.users || [];\n\n  const userMap = {};\n  users.forEach((user) => {\n    userMap[user.id] = user;\n  });\n\n  tweets.forEach((tweet) => {\n    if (seenTweetIds.has(tweet.id)) return;\n    seenTweetIds.add(tweet.id);\n    const author = userMap[tweet.author_id] || {};\n    const username = author.username || 'unknown';\n    allTweets.push({\n      title: tweet.text.substring(0, 100) + (tweet.text.length > 100 ? '...' : ''),\n      url: `https://twitter.com/${username}/status/${tweet.id}`,\n      source: `X - @${username}`,\n      snippet: tweet.text,\n      publishedAt: tweet.created_at,\n      author: username,\n      metrics: tweet.public_metrics || {}\n    });\n  });\n\n  return allTweets.map(tweet => ({ json: tweet }));\n} catch (error) {\n  throw new Error(`X account search failed: ${error.message}`);\n}\n"
+        },
+        "name": "X Account Search",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          440,
+          450
+        ],
+        "id": "x-account"
+      },
+      {
+        "parameters": {
+          "mode": "append"
+        },
+        "name": "Merge X",
+        "type": "n8n-nodes-base.merge",
+        "typeVersion": 2.1,
+        "position": [
+          700,
+          400
+        ],
+        "id": "merge-x"
+      },
+      {
+        "parameters": {
+          "mode": "append"
+        },
+        "name": "Merge All",
+        "type": "n8n-nodes-base.merge",
+        "typeVersion": 2.1,
+        "position": [
+          940,
+          300
+        ],
+        "id": "merge"
+      },
+      {
+        "parameters": {
+          "jsCode": "// Normalize all data\nconst items = $input.all();\nconst normalized = [];\n\nfor (const item of items) {\n  const data = item.json;\n  const source = data.source || 'RSS';\n  const sourceType = source.startsWith('X -') ? 'X' : 'RSS';\n  normalized.push({\n    title: data.title || data.text || '',\n    url: data.link || data.url || '',\n    source,\n    sourceType,\n    snippet: (data.description || data.summary || data.text || data.snippet || '').substring(0, 300),\n    publishedAt: data.pubDate || data.isoDate || data.created_at || data.publishedAt || new Date().toISOString(),\n    author: data.author || data.username || '',\n    metrics: data.metrics || data.public_metrics || {}\n  });\n}\n\nreturn normalized.map(item => ({ json: item }));"
+        },
+        "name": "Normalize",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          1140,
+          300
+        ],
+        "id": "normalize"
+      },
+      {
+        "parameters": {
+          "jsCode": "// Cross-Day Dedupe Node\n// Attempts to use workflow staticData; if不可用则退化为“当次运行”去重（无跨日持久化）\n\nconst items = $input.all();\nconst EXPIRY_DAYS = Number.parseInt($env.DEDUPE_EXPIRY_DAYS || '7', 10);\nconst MAX_URLS = Number.parseInt($env.DEDUPE_MAX_URLS || '2000', 10);\n\n// Helper: load persistent store (prefer staticData)\nlet storage = { seenUrls: {} };\nlet storageMode = 'staticData';\n\ntry {\n  const staticData = this.getWorkflowStaticData\n    ? this.getWorkflowStaticData('global')\n    : this.helpers?.getWorkflowStaticData?.call(this, 'global');\n  if (!staticData) {\n    storageMode = 'volatile';\n  } else {\n    if (!staticData.seenUrls) staticData.seenUrls = {};\n    storage = staticData;\n  }\n} catch (err) {\n  storageMode = 'volatile';\n  storage = { seenUrls: {} };\n}\n\nconst now = Date.now();\nconst expiryMs = EXPIRY_DAYS * 24 * 60 * 60 * 1000;\n\n// Clean up expired entries\nconst urlKeys = Object.keys(storage.seenUrls);\nlet expiredCount = 0;\nfor (const url of urlKeys) {\n  const timestamp = storage.seenUrls[url];\n  if (now - timestamp > expiryMs) {\n    delete storage.seenUrls[url];\n    expiredCount++;\n  }\n}\n\n// Dedupe current batch\nconst unique = [];\nconst duplicateUrls = [];\nconst newUrls = [];\n\nfor (const item of items) {\n  const url = item.json.url;\n  if (!url) continue;\n\n  if (storage.seenUrls[url]) {\n    duplicateUrls.push(url);\n    continue;\n  }\n\n  storage.seenUrls[url] = now;\n  newUrls.push(url);\n  unique.push(item);\n}\n\n// Enforce max URL limit (remove oldest if over limit)\nconst allUrls = Object.entries(storage.seenUrls);\nif (allUrls.length > MAX_URLS) {\n  allUrls.sort((a, b) => a[1] - b[1]); // oldest first\n  const toRemove = allUrls.slice(0, allUrls.length - MAX_URLS);\n  for (const [url] of toRemove) {\n    delete storage.seenUrls[url];\n  }\n}\n\nconst stats = {\n  input_count: items.length,\n  unique_count: unique.length,\n  duplicate_count: duplicateUrls.length,\n  expired_cleaned: expiredCount,\n  total_stored_urls: Object.keys(storage.seenUrls).length,\n  expiry_days: EXPIRY_DAYS,\n  storage_mode: storageMode\n};\nconsole.log('Cross-Day Dedupe Stats:', JSON.stringify(stats));\n\nreturn unique;\n"
+        },
+        "name": "Cross-Day Dedupe",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          1340,
+          300
+        ],
+        "id": "dedupe"
+      },
+      {
+        "parameters": {
+          "jsCode": "// LLM Ranking Node Code for n8n\n// Batch-ranks content using OpenAI API to avoid timeouts\n\nconst items = $input.all();\nconst apiKey = $env.OPENAI_API_KEY;\nconst model = $env.OPENAI_MODEL || 'gpt-4o-mini';\nconst maxItems = Number.parseInt($env.LLM_RANK_MAX_ITEMS || '40', 10);\nconst batchSize = Number.parseInt($env.LLM_RANK_BATCH_SIZE || '8', 10);\nconst xRatioRaw = Number.parseFloat($env.LLM_RANK_X_RATIO || '0.7');\nconst xRatio = Number.isFinite(xRatioRaw) ? Math.min(1, Math.max(0, xRatioRaw)) : 0.7;\nconst xAppliedCap = Number.parseInt($env.LLM_RANK_X_PER_SOURCE_CAP_APPLIED || '4', 10);\nconst xResearchCap = Number.parseInt($env.LLM_RANK_X_PER_SOURCE_CAP_RESEARCH || '1', 10);\nconst xDefaultCap = Number.parseInt($env.LLM_RANK_X_PER_SOURCE_CAP_DEFAULT || '2', 10);\n\n// Low-score filtering threshold (default: 18/30 = 60%)\nconst minScoreThreshold = Number.parseInt($env.LLM_RANK_MIN_SCORE || '18', 10);\n// Per-source cap to prevent one source dominating the output\nconst perSourceCap = Number.parseInt($env.LLM_RANK_PER_SOURCE_CAP || '3', 10);\n\nif (!apiKey) {\n  throw new Error('Missing OPENAI_API_KEY for LLM Rank.');\n}\n\nconst normalizeText = (value, maxLen) => {\n  const text = String(value || '').replace(/\\s+/g, ' ').trim();\n  if (!maxLen) return text;\n  return text.length > maxLen ? text.slice(0, maxLen) : text;\n};\n\nconst metricScore = (metrics = {}) => {\n  const like = Number(metrics.like_count || 0);\n  const rt = Number(metrics.retweet_count || 0);\n  const quote = Number(metrics.quote_count || 0);\n  const reply = Number(metrics.reply_count || 0);\n  const impression = Number(metrics.impression_count || 0);\n  return like + rt * 2 + quote * 1.5 + reply * 0.5 + impression * 0.05;\n};\n\nconst parseTime = (value) => {\n  if (!value) return 0;\n  const ts = Date.parse(value);\n  return Number.isFinite(ts) ? ts : 0;\n};\n\nconst prepped = items.map((item, index) => {\n  const data = item.json || {};\n  const metrics = data.metrics || data.public_metrics || {};\n  const source = data.source || '';\n  const sourceType = data.sourceType || (source.startsWith('X -') ? 'X' : 'RSS');\n  return {\n    index,\n    data,\n    metricScore: metricScore(metrics),\n    sourceType,\n    publishedAtScore: parseTime(data.publishedAt || data.created_at || data.pubDate || data.isoDate)\n  };\n});\n\nconst maxItemsSafe = Math.max(1, Math.min(maxItems, prepped.length));\n\nconst xItems = prepped.filter((entry) => entry.sourceType === 'X');\nconst rssItems = prepped.filter((entry) => entry.sourceType !== 'X');\n\nxItems.sort((a, b) => b.metricScore - a.metricScore);\nrssItems.sort((a, b) => b.publishedAtScore - a.publishedAtScore);\n\nlet xQuota = Math.min(xItems.length, Math.round(maxItemsSafe * xRatio));\nlet rssQuota = Math.min(rssItems.length, maxItemsSafe - xQuota);\nif (rssQuota < maxItemsSafe - xQuota) {\n  xQuota = Math.min(xItems.length, maxItemsSafe - rssQuota);\n}\n\nconst appliedSources = new Set([\n  'X - ai-agents',\n  'X - ai-workflow',\n  'X - ai-applications',\n  'X - llm-prompts',\n  'X - @simonw',\n  'X - @swyx',\n  'X - @hwchase17'\n]);\nconst researchSources = new Set([\n  'X - ai-research',\n  'X - @ylecun'\n]);\n\nconst xBuckets = new Map();\nxItems.forEach((entry) => {\n  const key = entry.data.source || 'X';\n  if (!xBuckets.has(key)) xBuckets.set(key, []);\n  xBuckets.get(key).push(entry);\n});\n\nconst xSelected = [];\nconst pickedIndexes = new Set();\n\nfor (const [source, bucket] of xBuckets.entries()) {\n  bucket.sort((a, b) => b.metricScore - a.metricScore);\n  let cap = xDefaultCap;\n  if (appliedSources.has(source)) cap = xAppliedCap;\n  if (researchSources.has(source)) cap = xResearchCap;\n  for (const entry of bucket.slice(0, cap)) {\n    if (xSelected.length >= xQuota) break;\n    if (pickedIndexes.has(entry.index)) continue;\n    pickedIndexes.add(entry.index);\n    xSelected.push(entry);\n  }\n  if (xSelected.length >= xQuota) break;\n}\n\nif (xSelected.length < xQuota) {\n  for (const entry of xItems) {\n    if (xSelected.length >= xQuota) break;\n    if (pickedIndexes.has(entry.index)) continue;\n    pickedIndexes.add(entry.index);\n    xSelected.push(entry);\n  }\n}\n\nconst selected = xSelected.concat(rssItems.slice(0, rssQuota));\n\nconst chunk = (arr, size) => {\n  const chunks = [];\n  for (let i = 0; i < arr.length; i += size) {\n    chunks.push(arr.slice(i, i + size));\n  }\n  return chunks;\n};\n\nconst parseJson = (content) => {\n  if (!content) return null;\n  const trimmed = String(content).trim();\n  try {\n    return JSON.parse(trimmed);\n  } catch (error) {\n    const objStart = trimmed.indexOf('{');\n    const objEnd = trimmed.lastIndexOf('}');\n    if (objStart >= 0 && objEnd > objStart) {\n      try {\n        return JSON.parse(trimmed.slice(objStart, objEnd + 1));\n      } catch (err) {\n        // ignore and try array\n      }\n    }\n    const arrStart = trimmed.indexOf('[');\n    const arrEnd = trimmed.lastIndexOf(']');\n    if (arrStart >= 0 && arrEnd > arrStart) {\n      try {\n        return JSON.parse(trimmed.slice(arrStart, arrEnd + 1));\n      } catch (err) {\n        return null;\n      }\n    }\n  }\n  return null;\n};\n\nconst rankedItems = [];\nlet failedBatches = 0;\n\nfor (const group of chunk(selected, Math.max(1, batchSize))) {\n  const payloadItems = group.map((entry) => ({\n    id: entry.index,\n    title: normalizeText(entry.data.title || entry.data.text || '', 120),\n    snippet: normalizeText(entry.data.snippet || entry.data.description || entry.data.summary || '', 280),\n    source: normalizeText(entry.data.source || '', 80),\n    url: normalizeText(entry.data.url || '', 160),\n    source_type: entry.sourceType || 'RSS'\n  }));\n\n  const prompt = `你是一个内容策展专家。评估以下内容是否适合发布到 X/Twitter。\n\n优先级要求：\n- 强烈偏好“应用型/可落地”的内容（AI工具、智能体工作流、实践案例、产品发布、教程/指南）\n- 明显降低“纯基础研究/学术理论/宏观观点/股票市场”内容的评分\n\n请逐条评分（0-10分）：\n1. relevance: 与AI工具/智能体/技术/工作流的相关性（应用型权重更高）\n2. credibility: 内容的可信度和权威性\n3. novelty: 新颖性和独特视角（但不能牺牲可落地性）\n\n输入数据（按数组顺序返回评分）：\n${JSON.stringify(payloadItems, null, 2)}\n\n返回严格的JSON对象（不要markdown代码块），格式如下：\n{\n  \"items\": [\n    {\"id\": 1, \"relevance\": 8, \"credibility\": 9, \"novelty\": 7, \"total\": 24, \"why\": \"一句话理由\"}\n  ]\n}`;\n\n  let batchScores = [];\n  try {\n    const response = await this.helpers.httpRequest({\n      method: 'POST',\n      url: 'https://api.openai.com/v1/chat/completions',\n      headers: {\n        'Authorization': `Bearer ${apiKey}`,\n        'Content-Type': 'application/json'\n      },\n      body: {\n        model,\n        messages: [\n          { role: 'system', content: '你是一个专业的内容策展专家。' },\n          { role: 'user', content: prompt }\n        ],\n        temperature: 0.2,\n        response_format: { type: 'json_object' }\n      }\n    });\n\n    const parsed = parseJson(response?.choices?.[0]?.message?.content);\n    if (parsed?.items && Array.isArray(parsed.items)) {\n      batchScores = parsed.items;\n    } else if (Array.isArray(parsed)) {\n      batchScores = parsed;\n    }\n  } catch (error) {\n    failedBatches += 1;\n  }\n\n  const scoreMap = new Map();\n  batchScores.forEach((score) => {\n    if (!score || typeof score.id === 'undefined') return;\n    scoreMap.set(Number(score.id), score);\n  });\n\n  group.forEach((entry) => {\n    const score = scoreMap.get(entry.index);\n    if (score) {\n      const total = Number.isFinite(score.total)\n        ? Number(score.total)\n        : Number(score.relevance || 0) + Number(score.credibility || 0) + Number(score.novelty || 0);\n      rankedItems.push({\n        json: {\n          ...entry.data,\n          score: {\n            relevance: Number(score.relevance || 0),\n            credibility: Number(score.credibility || 0),\n            novelty: Number(score.novelty || 0),\n            total,\n            why: score.why || ''\n          }\n        }\n      });\n    } else {\n      const fallbackTotal = Math.min(30, Math.round(Math.log1p(entry.metricScore) * 6));\n      rankedItems.push({\n        json: {\n          ...entry.data,\n          score: {\n            relevance: 0,\n            credibility: 0,\n            novelty: 0,\n            total: fallbackTotal,\n            why: 'LLM未返回结果，使用互动指标估算'\n          }\n        }\n      });\n    }\n  });\n}\n\nif (failedBatches >= Math.ceil(selected.length / Math.max(1, batchSize))) {\n  throw new Error('LLM Rank failed for all batches. Check OpenAI API key/billing/connectivity.');\n}\n\nrankedItems.sort((a, b) => (b.json.score?.total || 0) - (a.json.score?.total || 0));\n\n// Filter out low-score items (below threshold)\nconst filteredByScore = rankedItems.filter((item) => {\n  const total = item.json.score?.total || 0;\n  return total >= minScoreThreshold;\n});\n\n// Apply per-source cap to prevent one source dominating\nconst sourceCounts = new Map();\nconst filteredBySourceCap = filteredByScore.filter((item) => {\n  const source = item.json.source || 'unknown';\n  const count = sourceCounts.get(source) || 0;\n  if (count >= perSourceCap) return false;\n  sourceCounts.set(source, count + 1);\n  return true;\n});\n\n// Log filtering stats for debugging\nconst statsLog = {\n  input_count: items.length,\n  selected_for_ranking: selected.length,\n  after_llm_ranking: rankedItems.length,\n  after_score_filter: filteredByScore.length,\n  after_source_cap: filteredBySourceCap.length,\n  min_score_threshold: minScoreThreshold,\n  per_source_cap: perSourceCap,\n  filtered_low_score: rankedItems.length - filteredByScore.length,\n  filtered_source_cap: filteredByScore.length - filteredBySourceCap.length\n};\nconsole.log('LLM Rank Stats:', JSON.stringify(statsLog));\n\nreturn filteredBySourceCap;\n"
+        },
+        "name": "LLM Rank",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          1540,
+          300
+        ],
+        "id": "llm-rank"
+      },
+      {
+        "parameters": {
+          "jsCode": "// Tweet Generation Node Code for n8n\n// This code generates 3 tweet drafts using OpenAI API\n\nconst items = $input.all();\nconst apiKey = $env.OPENAI_API_KEY;\nconst model = $env.OPENAI_MODEL || 'gpt-4o-mini';\nconst allowTwitterLinks = String($env.TWEET_ALLOW_TWITTER_LINKS || '').toLowerCase() === 'true';\nconst blocklistRaw = $env.TWEET_TONE_BLOCKLIST || 'stupid,idiot,dumb,trash,垃圾,傻,蠢,愚蠢,脑残,仇恨';\nconst blocklist = blocklistRaw.split(',').map(w => w.trim().toLowerCase()).filter(Boolean);\n\n// Collect pipeline statistics for observability\nconst pipelineStats = {\n  total_candidates: items.length,\n  by_source_type: {},\n  by_tier: {},\n  score_distribution: { high: 0, medium: 0, low: 0 },\n  avg_score: 0\n};\n\nlet scoreSum = 0;\nitems.forEach((item) => {\n  const data = item.json || {};\n  const sourceType = data.sourceType || 'RSS';\n  const tier = data.tier || 'unknown';\n  const score = data.score?.total || 0;\n\n  pipelineStats.by_source_type[sourceType] = (pipelineStats.by_source_type[sourceType] || 0) + 1;\n  pipelineStats.by_tier[tier] = (pipelineStats.by_tier[tier] || 0) + 1;\n\n  if (score >= 24) pipelineStats.score_distribution.high++;\n  else if (score >= 18) pipelineStats.score_distribution.medium++;\n  else pipelineStats.score_distribution.low++;\n\n  scoreSum += score;\n});\npipelineStats.avg_score = items.length > 0 ? Math.round(scoreSum / items.length * 10) / 10 : 0;\n\nconst isTwitterUrl = (url) => {\n  const text = String(url || '').toLowerCase();\n  return text.includes('twitter.com/') || text.includes('x.com/') || text.includes('t.co/');\n};\n\nconst eligible = items.filter((item) => {\n  const data = item.json || {};\n  const source = data.source || '';\n  const sourceType = data.sourceType || (source.startsWith('X -') ? 'X' : 'RSS');\n  const url = data.url || data.link || '';\n  if (!url) return false;\n  if (!allowTwitterLinks && isTwitterUrl(url)) return false;\n  if (sourceType === 'X') return false;\n  return true;\n});\n\nconst fallbackEligible = items.filter((item) => {\n  const data = item.json || {};\n  const url = data.url || data.link || '';\n  if (!url) return false;\n  if (!allowTwitterLinks && isTwitterUrl(url)) return false;\n  return true;\n});\n\n// Take top 10 items (prefer non-X sources)\nconst top10 = (eligible.length ? eligible : fallbackEligible).slice(0, 10);\n\nif (!top10.length) {\n  throw new Error('No eligible non-Twitter sources available for tweet generation.');\n}\n\n// Build content list\nconst contentList = top10.map((item, idx) => {\n  const data = item.json;\n  return `${idx + 1}. ${data.title}\n   来源: ${data.source}\n   链接: ${data.url}\n   评分: ${data.score?.total || 0}/30\n   理由: ${data.score?.why || 'N/A'}`;\n}).join('\\n\\n');\n\nconst prompt = `基于以下10条精选AI内容，生成3个不同风格的推文草稿。\n\n精选内容：\n${contentList}\n\n要求：\n1. 观点型（有立场但尊重）：表达观点但不引战，语气克制，**严格控制在250字符内**\n2. Framework（框架总结）：结构化、教育性内容，可用emoji分点，**严格控制在250字符内**\n3. Case Study（案例分析）：具体案例和应用，包含链接，**严格控制在250字符内**\n\n每个推文必须：\n- **严格符合X/Twitter 280字符限制（建议控制在250字符以内留出安全边界）**\n- 包含至少1个相关链接\n- 语气专业、开放、包容，保持克制与尊重\n- 避免过度营销\n- 链接尽量放在推文末尾\n- 避免攻击性/歧视性/极端化措辞，不要嘲讽个人或群体\n- 不要引用或链接任何X/Twitter帖子；仅使用上面素材中的非X链接\n- 不要用第一人称宣称自己发布/制作了素材中的产品或工具\n\n返回严格的JSON格式（不要markdown代码块）：\n{\n  \"hot_take\": {\n    \"text\": \"推文文本（含链接）\",\n    \"rationale\": \"为什么选择这个角度\",\n    \"risk\": \"可能的风险或注意事项\"\n  },\n  \"framework\": {\n    \"text\": \"推文文本（含链接）\",\n    \"rationale\": \"为什么选择这个角度\",\n    \"risk\": \"可能的风险或注意事项\"\n  },\n  \"case\": {\n    \"text\": \"推文文本（含链接）\",\n    \"rationale\": \"为什么选择这个角度\",\n    \"risk\": \"可能的风险或注意事项\"\n  }\n}`;\n\ntry {\n  const response = await this.helpers.httpRequest({\n    method: 'POST',\n    url: 'https://api.openai.com/v1/chat/completions',\n    headers: {\n      'Authorization': `Bearer ${apiKey}`,\n      'Content-Type': 'application/json'\n    },\n    body: {\n      model: model,\n      messages: [\n        { role: 'system', content: '你是一个专业的社交媒体内容创作专家。' },\n        { role: 'user', content: prompt }\n      ],\n      temperature: 0.7,\n      response_format: { type: 'json_object' }\n    }\n  });\n\n  const tweets = JSON.parse(response.choices[0].message.content);\n\n  const hasBlocked = (value) => {\n    const text = String(value || '').toLowerCase();\n    return blocklist.some(word => word && text.includes(word));\n  };\n\n  const buildFallback = (label, source) => {\n    const title = source?.title || source?.snippet || '今日 AI 动态';\n    const url = source?.url || '';\n    let text = '';\n    if (label === 'hot_take') {\n      text = `一个克制的观察：${title}。${url}`;\n    } else if (label === 'framework') {\n      text = `框架：问题→方法→结果。案例：${title} ${url}`;\n    } else {\n      text = `案例复盘：${title}。关注其方法与结果。${url}`;\n    }\n    return {\n      text,\n      rationale: '基于公开信息，保持专业与克制的表达',\n      risk: '需核实细节，避免过度解读',\n      tone_guarded: true\n    };\n  };\n\n  const applyToneGuard = (tweetObj, label, fallbackSource) => {\n    if (!tweetObj || !tweetObj.text) return buildFallback(label, fallbackSource);\n    const blocked = [tweetObj.text, tweetObj.rationale, tweetObj.risk].some(hasBlocked);\n    if (blocked) return buildFallback(label, fallbackSource);\n    return tweetObj;\n  };\n\n  const fallbackSources = [top10[0]?.json, top10[1]?.json, top10[2]?.json];\n\n  // Validate and truncate tweets to ensure 280 character limit\n  const MAX_LENGTH = 280;\n  const validateAndTruncate = (tweetObj) => {\n    if (!tweetObj || !tweetObj.text) return tweetObj;\n\n    const text = tweetObj.text;\n    const length = text.length;\n\n    if (length <= MAX_LENGTH) {\n      return { ...tweetObj, length, truncated: false };\n    }\n\n    // Extract URLs to preserve them\n    const urlRegex = /(https?:\\/\\/[^\\s]+)/g;\n    const urls = text.match(urlRegex) || [];\n\n    // Calculate available space for text (280 - URLs - ellipsis - spaces)\n    const urlsLength = urls.reduce((sum, url) => sum + url.length, 0);\n    const availableSpace = MAX_LENGTH - urlsLength - 3; // 3 for \"...\"\n\n    if (availableSpace < 50) {\n      // If not enough space, just hard truncate\n      return {\n        ...tweetObj,\n        text: text.substring(0, MAX_LENGTH - 3) + '...',\n        length: MAX_LENGTH,\n        truncated: true,\n        original_length: length\n      };\n    }\n\n    // Smart truncate: remove text but keep URLs\n    let textWithoutUrls = text;\n    urls.forEach(url => {\n      textWithoutUrls = textWithoutUrls.replace(url, '');\n    });\n\n    const truncatedText = textWithoutUrls.substring(0, availableSpace).trim();\n    const finalText = truncatedText + '... ' + urls.join(' ');\n\n    return {\n      ...tweetObj,\n      text: finalText,\n      length: finalText.length,\n      truncated: true,\n      original_length: length\n    };\n  };\n\n  // Validate all three tweet types\n  const validatedTweets = {\n    hot_take: validateAndTruncate(applyToneGuard(tweets.hot_take, 'hot_take', fallbackSources[0])),\n    framework: validateAndTruncate(applyToneGuard(tweets.framework, 'framework', fallbackSources[1])),\n    case: validateAndTruncate(applyToneGuard(tweets.case, 'case', fallbackSources[2]))\n  };\n\n  // Log pipeline stats for debugging\n  console.log('Pipeline Stats:', JSON.stringify(pipelineStats));\n\n  return [{\n    json: {\n      tweets: validatedTweets,\n      sources: top10.map(item => item.json),\n      generated_at: new Date().toISOString(),\n      pipeline_stats: pipelineStats\n    }\n  }];\n} catch (error) {\n  throw new Error(`Tweet generation failed: ${error.message}`);\n}\n"
+        },
+        "name": "Generate Tweets",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          1740,
+          300
+        ],
+        "id": "tweet-gen"
+      },
+      {
+        "parameters": {
+          "jsCode": "// Slack Block Kit Output Node Code for n8n\n// This code formats and sends the daily pack to Slack\n\nconst data = $input.first().json;\nconst slackToken = $env.SLACK_BOT_TOKEN;\nconst channelId = $env.SLACK_CHANNEL_ID;\n\nconst tweets = data.tweets;\nconst sources = data.sources;\nconst instructions = [\n  '在本消息线程回复以下指令以执行动作：',\n  '`post 1` 发布 Option 1',\n  '`post 2` 发布 Option 2',\n  '`post 3` 发布 Option 3',\n  '（默认仅 dry-run，不会真的发推；需要你在环境变量开启 X 写入开关）',\n].join('\\n');\n\n// Extract Top 3 highlights from sources\n// Priority: Tier A sources, high scores, keywords indicating major changes\nconst highlightKeywords = [\n  'release', 'launch', 'announce', 'new', 'update', 'v2', 'v3', 'v4',\n  'gpt-5', 'claude', 'gemini', 'llama', 'mistral', 'api', 'sdk',\n  '发布', '更新', '升级', '新版', '重大', '突破'\n];\n\nconst getHighlightScore = (source) => {\n  let score = source.score?.total || 0;\n  // Boost Tier A sources significantly\n  if (source.tier === 'A') score += 15;\n  else if (source.tier === 'B') score += 5;\n  // Boost items with highlight keywords\n  const titleLower = (source.title || '').toLowerCase();\n  const snippetLower = (source.snippet || '').toLowerCase();\n  for (const kw of highlightKeywords) {\n    if (titleLower.includes(kw) || snippetLower.includes(kw)) {\n      score += 3;\n      break;\n    }\n  }\n  return score;\n};\n\nconst topHighlights = [...sources]\n  .map(s => ({ ...s, highlightScore: getHighlightScore(s) }))\n  .sort((a, b) => b.highlightScore - a.highlightScore)\n  .slice(0, 3);\n\n// Format highlight text with emoji based on tier\nconst formatHighlight = (item, idx) => {\n  const tierEmoji = item.tier === 'A' ? '🔴' : item.tier === 'B' ? '🟠' : '🟡';\n  const title = (item.title || '').substring(0, 60);\n  const source = item.source || 'Unknown';\n  return `${tierEmoji} *${idx + 1}. ${title}*\\n   _来源: ${source}_`;\n};\n\nconst highlightsText = topHighlights.length > 0\n  ? topHighlights.map((h, i) => formatHighlight(h, i)).join('\\n\\n')\n  : '_今日无重大变动_';\n\n// Build Slack Block Kit message\nconst blocks = [\n  {\n    \"type\": \"header\",\n    \"text\": {\n      \"type\": \"plain_text\",\n      \"text\": \"📦 Today's X Daily Pack\",\n      \"emoji\": true\n    }\n  },\n  {\n    \"type\": \"context\",\n    \"elements\": [\n      {\n        \"type\": \"mrkdwn\",\n        \"text\": `Generated: ${new Date().toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' })}`\n      }\n    ]\n  },\n  {\n    \"type\": \"divider\"\n  },\n  {\n    \"type\": \"section\",\n    \"text\": {\n      \"type\": \"mrkdwn\",\n      \"text\": `*🔥 Top 3 重大变动*\\n\\n${highlightsText}`\n    }\n  },\n  {\n    \"type\": \"divider\"\n  },\n  {\n    \"type\": \"section\",\n    \"text\": {\n      \"type\": \"mrkdwn\",\n      \"text\": `*✅ 审核与发布*\\n${instructions}`\n    }\n  },\n  {\n    \"type\": \"divider\"\n  },\n  {\n    \"type\": \"section\",\n    \"text\": {\n      \"type\": \"mrkdwn\",\n      \"text\": \"*🎯 推文选项（选一个发布）*\"\n    }\n  },\n  {\n    \"type\": \"section\",\n    \"text\": {\n      \"type\": \"mrkdwn\",\n      \"text\": `*Option 1: Hot Take* ${tweets.hot_take.truncated ? '⚠️ _已截断_' : ''}\\n${tweets.hot_take.text}\\n\\n_字符数: ${tweets.hot_take.length || tweets.hot_take.text.length}/280_${tweets.hot_take.truncated ? ` | _原始: ${tweets.hot_take.original_length}_` : ''}\\n_理由: ${tweets.hot_take.rationale}_\\n_风险: ${tweets.hot_take.risk}_`\n    }\n  },\n  {\n    \"type\": \"divider\"\n  },\n  {\n    \"type\": \"section\",\n    \"text\": {\n      \"type\": \"mrkdwn\",\n      \"text\": `*Option 2: Framework* ${tweets.framework.truncated ? '⚠️ _已截断_' : ''}\\n${tweets.framework.text}\\n\\n_字符数: ${tweets.framework.length || tweets.framework.text.length}/280_${tweets.framework.truncated ? ` | _原始: ${tweets.framework.original_length}_` : ''}\\n_理由: ${tweets.framework.rationale}_\\n_风险: ${tweets.framework.risk}_`\n    }\n  },\n  {\n    \"type\": \"divider\"\n  },\n  {\n    \"type\": \"section\",\n    \"text\": {\n      \"type\": \"mrkdwn\",\n      \"text\": `*Option 3: Case Study* ${tweets.case.truncated ? '⚠️ _已截断_' : ''}\\n${tweets.case.text}\\n\\n_字符数: ${tweets.case.length || tweets.case.text.length}/280_${tweets.case.truncated ? ` | _原始: ${tweets.case.original_length}_` : ''}\\n_理由: ${tweets.case.rationale}_\\n_风险: ${tweets.case.risk}_`\n    }\n  },\n  {\n    \"type\": \"divider\"\n  },\n  {\n    \"type\": \"section\",\n    \"text\": {\n      \"type\": \"mrkdwn\",\n      \"text\": \"*📚 今日素材（Top 10）*\"\n    }\n  }\n];\n\n// Add sources\nsources.forEach((source, idx) => {\n  blocks.push({\n    \"type\": \"section\",\n    \"text\": {\n      \"type\": \"mrkdwn\",\n      \"text\": `${idx + 1}. *${source.title}*\\n来源: ${source.source} | 评分: ${source.score?.total || 0}/30\\n<${source.url}|查看链接>`\n    }\n  });\n});\n\n// Add pipeline stats section for observability\nconst stats = data.pipeline_stats;\nif (stats) {\n  const tierBreakdown = Object.entries(stats.by_tier || {})\n    .map(([tier, count]) => `${tier}: ${count}`)\n    .join(' | ');\n  const sourceBreakdown = Object.entries(stats.by_source_type || {})\n    .map(([type, count]) => `${type}: ${count}`)\n    .join(' | ');\n  const scoreDist = stats.score_distribution || {};\n\n  blocks.push(\n    { \"type\": \"divider\" },\n    {\n      \"type\": \"context\",\n      \"elements\": [\n        {\n          \"type\": \"mrkdwn\",\n          \"text\": `📊 *运行统计* | 候选: ${stats.total_candidates || 0} | 平均分: ${stats.avg_score || 0}/30 | 高分(≥24): ${scoreDist.high || 0} | 中分(18-23): ${scoreDist.medium || 0}`\n        }\n      ]\n    },\n    {\n      \"type\": \"context\",\n      \"elements\": [\n        {\n          \"type\": \"mrkdwn\",\n          \"text\": `📁 来源分布: ${sourceBreakdown} | 📈 Tier分布: ${tierBreakdown}`\n        }\n      ]\n    }\n  );\n}\n\n// Send to Slack\ntry {\n  const packMetadata = {\n    event_type: 'x_daily_pack',\n    event_payload: {\n      version: 1,\n      generated_at: data.generated_at || new Date().toISOString(),\n      tweets: {\n        hot_take: tweets?.hot_take?.text || '',\n        framework: tweets?.framework?.text || '',\n        case: tweets?.case?.text || ''\n      },\n      sources: (sources || []).slice(0, 10).map((s) => ({\n        title: s?.title || '',\n        url: s?.url || '',\n        source: s?.source || '',\n        score: s?.score?.total || 0\n      }))\n    }\n  };\n\n  const response = await this.helpers.httpRequest({\n    method: 'POST',\n    url: 'https://slack.com/api/chat.postMessage',\n    headers: {\n      'Authorization': `Bearer ${slackToken}`,\n      'Content-Type': 'application/json'\n    },\n    body: {\n      channel: channelId,\n      blocks: blocks,\n      metadata: packMetadata,\n      text: 'Today\\'s X Daily Pack'\n    }\n  });\n\n  if (!response.ok) {\n    throw new Error(`Slack API error: ${response.error}`);\n  }\n\n  return [{\n    json: {\n      success: true,\n      message_ts: response.ts,\n      channel: response.channel\n    }\n  }];\n} catch (error) {\n  throw new Error(`Slack send failed: ${error.message}`);\n}\n"
+        },
+        "name": "Send to Slack",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          1940,
+          300
+        ],
+        "id": "slack-output"
+      }
+    ],
+    "connections": {
+      "Manual Trigger": {
+        "main": [
+          [
+            {
+              "node": "RSS Fetch All",
+              "type": "main",
+              "index": 0
+            },
+            {
+              "node": "X Keyword Search",
+              "type": "main",
+              "index": 0
+            },
+            {
+              "node": "X Account Search",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Trigger 8AM": {
+        "main": [
+          [
+            {
+              "node": "RSS Fetch All",
+              "type": "main",
+              "index": 0
+            },
+            {
+              "node": "X Keyword Search",
+              "type": "main",
+              "index": 0
+            },
+            {
+              "node": "X Account Search",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "RSS Fetch All": {
+        "main": [
+          [
+            {
+              "node": "Merge All",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "X Keyword Search": {
+        "main": [
+          [
+            {
+              "node": "Merge X",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "X Account Search": {
+        "main": [
+          [
+            {
+              "node": "Merge X",
+              "type": "main",
+              "index": 1
+            }
+          ]
+        ]
+      },
+      "Merge X": {
+        "main": [
+          [
+            {
+              "node": "Merge All",
+              "type": "main",
+              "index": 1
+            }
+          ]
+        ]
+      },
+      "Merge All": {
+        "main": [
+          [
+            {
+              "node": "Normalize",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Normalize": {
+        "main": [
+          [
+            {
+              "node": "Cross-Day Dedupe",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Cross-Day Dedupe": {
+        "main": [
+          [
+            {
+              "node": "LLM Rank",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "LLM Rank": {
+        "main": [
+          [
+            {
+              "node": "Generate Tweets",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Generate Tweets": {
+        "main": [
+          [
+            {
+              "node": "Send to Slack",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      }
+    },
+    "settings": {
+      "executionOrder": "v1",
+      "timezone": "Asia/Shanghai"
+    },
+    "staticData": {
+      "node:Trigger 8AM": {
+        "recurrenceRules": []
+      }
+    },
+    "meta": null,
+    "pinData": null,
+    "versionId": "8c83f576-bf34-4bfa-8846-586293c85037",
+    "activeVersionId": "8c83f576-bf34-4bfa-8846-586293c85037",
+    "versionCounter": 7,
+    "triggerCount": 1,
+    "tags": [],
+    "shared": [
+      {
+        "updatedAt": "2026-01-19T17:00:06.617Z",
+        "createdAt": "2026-01-19T17:00:06.617Z",
+        "role": "workflow:owner",
+        "workflowId": "0yeGunCd6jz5PAEA",
+        "projectId": "bP0wTMLAHPN12AtP",
+        "project": {
+          "updatedAt": "2026-01-19T16:44:06.041Z",
+          "createdAt": "2026-01-19T16:40:22.638Z",
+          "id": "bP0wTMLAHPN12AtP",
+          "name": "Henry Caldwell <info@zynovexllc.com>",
+          "type": "personal",
+          "icon": null,
+          "description": null,
+          "creatorId": "e99989f1-b050-40a5-aa6c-4450254ab0fd"
+        }
+      }
+    ]
+  }
+]

@@ -1,0 +1,98 @@
+{
+  "version": "1.0.0",
+  "lastUpdated": "2026-01-24",
+  "meta": {
+    "description": "X Daily Pack 统一关键词配置",
+    "quotaLimits": {
+      "newsApi": { "daily": 100, "queriesPerRun": 6 },
+      "xSearch": { "queriesPerRun": 10 },
+      "xAccounts": { "maxAccounts": 20 }
+    }
+  },
+  "layers": {
+    "core": {
+      "description": "稳定实体 - 公司、产品、模型",
+      "companies": [
+        { "id": "openai", "names": ["OpenAI"], "products": ["GPT-5", "ChatGPT", "Sora", "Codex"], "priority": 1 },
+        { "id": "anthropic", "names": ["Anthropic"], "products": ["Claude", "Claude Opus", "Claude Sonnet"], "priority": 1 },
+        { "id": "google", "names": ["Google", "DeepMind"], "products": ["Gemini", "Gemini 3"], "priority": 1 },
+        { "id": "meta", "names": ["Meta AI"], "products": ["Llama", "Llama 4"], "priority": 2 },
+        { "id": "mistral", "names": ["Mistral AI"], "products": ["Mistral Large", "Mixtral"], "priority": 2 },
+        { "id": "xai", "names": ["xAI"], "products": ["Grok"], "priority": 2 },
+        { "id": "deepseek", "names": ["DeepSeek"], "products": ["DeepSeek V3", "DeepSeek V4"], "priority": 2 }
+      ],
+      "xAccounts": [
+        { "username": "OpenAI", "tier": "A", "category": "official" },
+        { "username": "AnthropicAI", "tier": "A", "category": "official" },
+        { "username": "GoogleAI", "tier": "A", "category": "official" },
+        { "username": "nvidia", "tier": "A", "category": "official" },
+        { "username": "awscloud", "tier": "A", "category": "official" },
+        { "username": "Microsoft", "tier": "A", "category": "official" },
+        { "username": "LangChainAI", "tier": "A", "category": "official" },
+        { "username": "karpathy", "tier": "B", "category": "expert" },
+        { "username": "sama", "tier": "B", "category": "expert" },
+        { "username": "ylecun", "tier": "B", "category": "expert" },
+        { "username": "hwchase17", "tier": "B", "category": "expert" },
+        { "username": "goodside", "tier": "B", "category": "expert" },
+        { "username": "simonw", "tier": "B", "category": "expert" },
+        { "username": "swyx", "tier": "B", "category": "expert" },
+        { "username": "ycombinator", "tier": "B", "category": "ecosystem" }
+      ]
+    },
+    "topics": {
+      "description": "可配置的热门话题分类",
+      "categories": {
+        "agents": {
+          "enabled": true,
+          "priority": 1,
+          "keywords": ["AI agent", "MCP", "Tool Use", "Function Calling", "Computer Use", "Multi-Agent"],
+          "xQuery": "(AI agent OR MCP OR \"Tool Use\" OR \"Function Calling\" OR \"Computer Use\") -is:retweet -is:reply lang:en"
+        },
+        "coding": {
+          "enabled": true,
+          "priority": 1,
+          "keywords": ["Cursor", "Claude Code", "GitHub Copilot", "Windsurf", "Agentic Coding", "AI IDE"],
+          "xQuery": "(Cursor OR \"Claude Code\" OR \"GitHub Copilot\" OR Windsurf OR \"Agentic Coding\") -is:retweet -is:reply lang:en"
+        },
+        "rag": {
+          "enabled": true,
+          "priority": 2,
+          "keywords": ["RAG", "Vector Database", "Knowledge Graph", "GraphRAG", "Embedding"],
+          "xQuery": "(RAG OR \"Vector Database\" OR \"Knowledge Graph\" OR GraphRAG) -is:retweet -is:reply lang:en"
+        },
+        "multimodal": {
+          "enabled": true,
+          "priority": 2,
+          "keywords": ["Sora", "Runway", "Pika", "Midjourney", "DALL-E", "Voice AI", "Text-to-Video"],
+          "xQuery": "(Sora OR Runway OR Pika OR Midjourney OR \"DALL-E\" OR \"Voice AI\") -is:retweet -is:reply lang:en"
+        },
+        "safety": {
+          "enabled": true,
+          "priority": 2,
+          "keywords": ["AI Alignment", "EU AI Act", "AI Safety", "AI Ethics", "AI Regulation"],
+          "xQuery": "(\"AI Alignment\" OR \"EU AI Act\" OR \"AI Safety\" OR \"AI Ethics\") -is:retweet -is:reply lang:en"
+        },
+        "workflow": {
+          "enabled": true,
+          "priority": 1,
+          "keywords": ["AI workflow", "AI automation", "AI productivity", "AI tools"],
+          "xQuery": "(AI workflow OR AI automation OR AI productivity OR \"AI tools\") -is:retweet -is:reply lang:en"
+        },
+        "buildinpublic": {
+          "enabled": true,
+          "priority": 2,
+          "keywords": ["buildinpublic", "indiehackers", "shipped", "launched"],
+          "xQuery": "(\"I built\" OR \"just shipped\" OR \"just launched\" OR #buildinpublic) (AI OR GPT OR Claude) -is:retweet -is:reply lang:en"
+        }
+      }
+    },
+    "trending": {
+      "description": "LLM自动发现的新兴关键词",
+      "enabled": true,
+      "maxKeywords": 5,
+      "refreshIntervalHours": 24,
+      "keywords": [],
+      "lastDiscovery": null
+    }
+  }
+}

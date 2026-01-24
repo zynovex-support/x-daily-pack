@@ -1,0 +1,33 @@
+# Tweet Generation Test Cases for Promptfoo
+# Tests the tweet generation prompt
+
+- description: "Generated tweets should contain URLs"
+  vars:
+    contentList: |
+      1. [📢 官方] OpenAI发布GPT-5
+         https://openai.com/blog/gpt5
+         亮点: 性能全面超越GPT-4
+  assert:
+    - type: is-json
+    - type: javascript
+      value: |
+        const data = JSON.parse(output);
+        const hasUrl = (text) => /https?:\/\/[^\s]+/.test(text);
+        return hasUrl(data.discovery?.text);
+    - type: javascript
+      value: |
+        const data = JSON.parse(output);
+        return data.discovery?.text?.length <= 280;
+
+- description: "Tweet tone should be casual, not formal"
+  vars:
+    contentList: |
+      1. [🔧 工具] yt-dlp视频下载工具更新
+         https://github.com/yt-dlp/yt-dlp
+         亮点: 支持更多网站
+  assert:
+    - type: is-json
+    - type: not-contains
+      value: "值得关注"
+    - type: not-contains
+      value: "引发热议"

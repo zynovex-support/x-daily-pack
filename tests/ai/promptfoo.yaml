@@ -1,0 +1,29 @@
+# Promptfoo Configuration for X Daily Pack
+# Tests LLM prompts for scoring and tweet generation
+
+description: "X Daily Pack AI Testing"
+
+providers:
+  - id: openai:gpt-4o-mini
+    config:
+      temperature: 0.2
+      response_format:
+        type: json_object
+
+prompts:
+  - file://prompts/scoring.txt
+  - file://prompts/tweet-gen.txt
+
+defaultTest:
+  options:
+    provider: openai:gpt-4o-mini
+
+tests:
+  - file://test-cases/scoring-cases.yaml
+  - file://test-cases/tweet-cases.yaml
+
+outputPath: ./results/eval-results.json
+
+evaluateOptions:
+  maxConcurrency: 2
+  showProgressBar: true

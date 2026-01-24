@@ -1,0 +1,25 @@
+# Environment
+.env
+.env.*
+token
+
+# Logs
+logs/
+*.log
+exec*.log
+
+# Dependencies
+node_modules/
+
+# Coverage
+coverage/
+
+# IDE
+.idea/
+.vscode/
+
+# Test results
+tests/ai/results/
+
+# Claude Code settings (may contain tokens)
+.claude/

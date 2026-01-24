@@ -1,0 +1,13 @@
+{
+  "description": "Slack 配置 - 用于发送每日内容包",
+  "channel": "#x-daily-pack",
+  "channel_id": "PLACEHOLDER_CHANNEL_ID",
+  "bot_token": "PLACEHOLDER_BOT_TOKEN",
+  "notes": [
+    "需要创建 Slack App 并获取 Bot Token",
+    "Bot 需要以下权限：chat:write, chat:write.public",
+    "channel_id 可以通过右键频道 -> View channel details 获取"
+  ],
+  "message_format": "block_kit",
+  "thread_prompt": "Reply here with: Posted? Which option? Any results?"
+}
