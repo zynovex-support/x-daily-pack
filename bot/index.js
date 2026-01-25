@@ -10,6 +10,7 @@ import { testCommand } from './commands/test.js';
 import { dockerCommand } from './commands/docker.js';
 import { workflowCommand } from './commands/workflow.js';
 import { logsCommand } from './commands/logs.js';
+import { askCommand, askxCommand } from './commands/ask.js';
 
 // 验证配置
 if (!config.token) {
@@ -39,7 +40,9 @@ bot.help((ctx) => ctx.reply(`📖 *可用命令*
 /test <unit|all> - 运行测试
 /docker <ps|logs|restart> - Docker
 /workflow trigger - 触发工作流
-/logs <n8n|bot> - 查看日志`, { parse_mode: 'Markdown' }));
+/logs <n8n|bot> - 查看日志
+/ask <问题> - 智能问答 (Claude)
+/askx <问题> - 智能问答 (Codex)`, { parse_mode: 'Markdown' }));
 
 // 功能命令
 bot.command('status', statusCommand);
@@ -48,6 +51,8 @@ bot.command('test', testCommand);
 bot.command('docker', dockerCommand);
 bot.command('workflow', workflowCommand);
 bot.command('logs', logsCommand);
+bot.command('ask', askCommand);
+bot.command('askx', askxCommand);
 
 // 启动
 bot.launch();
