@@ -1,0 +1,27 @@
+# 告警规则
+groups:
+  - name: x-daily-pack
+    rules:
+      - alert: WorkflowExecutionSlow
+        expr: workflow_duration_seconds > 300
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "工作流执行超时"
+
+      - alert: HighAPIUsage
+        expr: rate(openai_api_calls_total[1h]) > 100
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "OpenAI API 调用频率过高"
+
+      - alert: LowContentQuality
+        expr: avg(content_quality_score) < 15
+        for: 30m
+        labels:
+          severity: info
+        annotations:
+          summary: "内容质量分数偏低"

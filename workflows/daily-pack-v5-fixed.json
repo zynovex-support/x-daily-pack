@@ -4,6 +4,7 @@
     {
       "parameters": {
         "path": "x-daily-pack-trigger",
+        "authentication": "headerAuth",
         "responseMode": "onReceived",
         "options": {}
       },
@@ -15,7 +16,13 @@
         300
       ],
       "id": "webhook-trigger",
-      "webhookId": "x-daily-pack-trigger"
+      "webhookId": "x-daily-pack-trigger",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "yi0IbbTXrY0JTcWN",
+          "name": "Webhook Header Auth"
+        }
+      }
     },
     {
       "parameters": {},
@@ -476,6 +483,6 @@
     "executionOrder": "v1",
     "availableInMCP": false,
     "callerPolicy": "workflowsFromSameOwner",
-    "timezone": "Asia/Shanghai"
+    "timezone": "UTC"
   }
 }
