@@ -21,5 +21,13 @@ export const config = {
   commandTimeout: parseInt(process.env.COMMAND_TIMEOUT) || 60000,
 
   // 项目根目录
-  projectRoot: process.env.PROJECT_ROOT || '/home/henry/x'
+  projectRoot: process.env.PROJECT_ROOT || '/home/henry/x',
+  projectDir: process.env.PROJECT_ROOT || '/home/henry/x',
+
+  // /ask 智能问答配置
+  ask: {
+    timeout: 120000,        // 2分钟超时
+    maxBudget: 0.5,         // 单次最大成本 (USD)
+    maxResponseLength: 4000 // Telegram 消息长度限制
+  }
 };
