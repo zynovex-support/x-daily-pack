@@ -10,6 +10,29 @@ const path = require('path');
 const PORT = process.env.CONFIG_SERVER_PORT || 3001;
 const CONFIG_PATH = path.join(__dirname, '../config/keywords.json');
 
+// Security Configuration (Phase 1 - Audit Remediation)
+const API_KEY = process.env.CONFIG_API_KEY;
+const ALLOWED_ORIGINS = (process.env.ALLOWED_ORIGINS || 'http://localhost:5678').split(',');
+
+// API Key 认证
+const authenticate = (req, res) => {
+  // 健康检查不需要认证
+  if (req.url === '/health') return true;
+
+  if (!API_KEY) {
+    console.warn('[Config] WARNING: CONFIG_API_KEY not set, running in insecure mode');
+    return true;
+  }
+
+  const key = req.headers['x-api-key'];
+  if (key !== API_KEY) {
+    res.statusCode = 401;
+    res.end(JSON.stringify({ error: 'Unauthorized: Invalid or missing API key' }));
+    return false;
+  }
+  return true;
+};
+
 let configCache = null;
 let configMtime = null;
 
@@ -100,16 +123,26 @@ const buildXAccountQuery = (config) => {
 // HTTP服务器
 const server = http.createServer((req, res) => {
   res.setHeader('Content-Type', 'application/json');
-  res.setHeader('Access-Control-Allow-Origin', '*');
+
+  // CORS - 限制允许的来源
+  const origin = req.headers.origin;
+  if (origin && ALLOWED_ORIGINS.includes(origin)) {
+    res.setHeader('Access-Control-Allow-Origin', origin);
+  } else if (ALLOWED_ORIGINS.includes('*')) {
+    res.setHeader('Access-Control-Allow-Origin', '*');
+  }
 
   // 处理CORS预检
   if (req.method === 'OPTIONS') {
     res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-    res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, X-API-Key');
     res.statusCode = 204;
     res.end();
     return;
   }
+
+  // API Key 认证检查
+  if (!authenticate(req, res)) return;
 
   try {
     const config = loadConfig();
@@ -154,11 +187,13 @@ const server = http.createServer((req, res) => {
 
 server.listen(PORT, () => {
   console.log(`[Config Server] Running on http://localhost:${PORT}`);
+  console.log(`[Config Server] Security: ${API_KEY ? 'API Key enabled' : 'WARNING - No API Key set!'}`);
+  console.log(`[Config Server] CORS: ${ALLOWED_ORIGINS.join(', ')}`);
   console.log(`[Config Server] Endpoints:`);
   console.log(`  GET  /config          - Full configuration`);
   console.log(`  GET  /queries/news-api - News API queries`);
   console.log(`  GET  /queries/x-keywords - X keyword queries`);
   console.log(`  GET  /queries/x-accounts - X account query`);
   console.log(`  POST /trending        - Update trending keywords`);
-  console.log(`  GET  /health          - Health check`);
+  console.log(`  GET  /health          - Health check (no auth)`);
 });
