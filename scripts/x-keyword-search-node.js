@@ -19,14 +19,17 @@ const DEFAULT_KEYWORD_QUERIES = [
   { id: 'ai-tips', query: '("pro tip" OR "life hack" OR "game changer") (AI OR ChatGPT OR Claude) -is:retweet -is:reply lang:en' }
 ];
 
-// 从配置服务器获取查询
+// 从配置服务器获取查询（带 API Key 认证）
 const CONFIG_URL = $env.CONFIG_SERVER_URL || 'http://localhost:3001';
+const CONFIG_API_KEY = $env.CONFIG_API_KEY;
+const configHeaders = CONFIG_API_KEY ? { 'X-API-Key': CONFIG_API_KEY } : undefined;
 let keywordQueries = DEFAULT_KEYWORD_QUERIES;
 
 try {
   const configResp = await this.helpers.httpRequest({
     method: 'GET',
     url: `${CONFIG_URL}/queries/x-keywords`,
+    headers: configHeaders,
     timeout: 5000
   });
   const data = typeof configResp === 'string' ? JSON.parse(configResp) : configResp;

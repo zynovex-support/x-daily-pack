@@ -39,13 +39,22 @@ cp .env.example .env
 # 编辑 .env 填入你的API密钥
 ```
 
-### 3. 启动 n8n
+### 3. 启动服务 (n8n + config-server)
 
 ```bash
-docker-compose up -d
+docker compose up -d
 ```
 
-### 4. 运行测试
+### 4. 标准运维操作 (推荐固定顺序)
+
+```bash
+npm run deploy        # 同步代码节点与调度到 live n8n
+npm run drift-check   # 检查调度与代码节点漂移
+npm run probe         # 探针：调度/成功率/Slack命中
+npm run trigger:webhook
+```
+
+### 5. 运行测试
 
 ```bash
 npm test              # 运行所有测试
@@ -62,8 +71,13 @@ npm run test:coverage # 带覆盖率报告
 | `SLACK_CHANNEL_ID` | ✅ | Slack频道ID |
 | `WEBHOOK_SECRET` | ✅ | Webhook认证密钥 |
 | `CONFIG_API_KEY` | ✅ | Config Server API密钥 |
+| `N8N_API_KEY` | ✅ | n8n API Key（用于 deploy/probe/drift-check） |
+| `TELEGRAM_DAILY_BOT_TOKEN` | | Telegram Bot Token |
+| `TELEGRAM_DAILY_CHAT_ID` | | Telegram Chat ID |
 | `NEWS_API_KEY` | | NewsAPI密钥 |
 | `GNEWS_API_KEY` | | GNews密钥 |
+| `NEWS_API_MAX_APIS_PER_RUN` | | 强降级：限制单次运行 API 数量 |
+| `NEWS_API_OVERALL_BUDGET_MS` | | 强降级：限制单次运行总时长预算（ms） |
 
 完整环境变量列表见 `.env.example`
 
@@ -84,6 +98,7 @@ npm run test:coverage # 带覆盖率报告
 | 文档 | 说明 |
 |------|------|
 | [CLAUDE.md](CLAUDE.md) | 项目总结 |
+| [docs/RUNBOOK.md](docs/RUNBOOK.md) | 生产运维 Runbook（最推荐） |
 | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | 系统架构 |
 | [docs/SECURITY.md](docs/SECURITY.md) | 安全指南 |
 | [docs/MONITORING.md](docs/MONITORING.md) | 监控指南 |

@@ -1,8 +1,8 @@
 # X Daily Pack - 系统架构文档
 
 **版本**: v5-fixed
-**最后更新**: 2026-01-25
-**状态**: Phase 1-4 全部完成
+**最后更新**: 2026-01-27
+**状态**: Phase 1-4 完成 + Runbook/Probe/Drift-Check 已固化
 
 ---
 
@@ -267,7 +267,7 @@
 | 指标 | 类型 | 说明 |
 |------|------|------|
 | workflow_executions_total | Counter | 工作流执行次数 |
-| workflow_duration_seconds | Histogram | 执行耗时 |
+| workflow_duration_seconds_sum | Counter | 执行总耗时（秒） |
 | openai_api_calls_total | Counter | API调用次数 |
 | openai_api_cost_usd | Gauge | API成本 |
 | content_processed_total | Counter | 处理内容数 |
@@ -278,6 +278,13 @@
 - `scripts/metrics-collector.js`
 - `monitoring/prometheus.yml`
 - `monitoring/alerts.yml`
+
+**当前运行态说明（2026-01-27）**:
+- 指标收集器已实现，但 n8n / config-server 默认未暴露 `/metrics`
+- 生产侧的“可观测性主入口”目前是探针脚本：
+  - `npm run probe`
+  - `npm run probe:notify:send`
+  - 详见 `docs/RUNBOOK.md`
 
 ---
 
@@ -307,7 +314,7 @@
 
 | 配置项 | 值 | 说明 |
 |--------|-----|------|
-| N8N_BLOCK_ENV_ACCESS_IN_NODE | true | 禁止节点访问环境变量 |
+| N8N_BLOCK_ENV_ACCESS_IN_NODE | false（目标 true） | 现状为兼容 $env，后续需迁移 |
 | ALLOWED_ORIGINS | 指定域名 | CORS 白名单 |
 
 ### 7.3 密钥管理
@@ -318,7 +325,9 @@
 | CONFIG_API_KEY | Config Server 认证 | .env |
 | OPENAI_API_KEY | OpenAI API | .env |
 | SLACK_BOT_TOKEN | Slack 推送 | .env |
-| TELEGRAM_BOT_TOKEN | Telegram 推送 | .env |
+| TELEGRAM_DAILY_BOT_TOKEN | Telegram 推送 | .env |
+| TELEGRAM_DAILY_CHAT_ID | Telegram 推送 | .env |
+| N8N_API_KEY | n8n API 认证 | .env |
 
 ### 7.4 安全扫描
 
@@ -335,29 +344,35 @@
 
 ```yaml
 services:
-  n8n:           # 工作流引擎 (端口 5678)
-  postgres:      # 数据库 (端口 5432)
-  prometheus:    # 监控 (端口 9090)
-  grafana:       # 可视化 (端口 3000)
+  n8n:            # 工作流引擎 (端口 5678)
+  config-server:  # 配置服务 (端口 3001)
+
+# monitoring/docker-compose.yml（可选监控栈）
+#   prometheus:   # 监控 (端口 9090)
+#   grafana:      # 可视化 (端口 3000)
 ```
 
 ### 8.2 服务依赖
 
 ```
 ┌─────────────────────────────────────────────────────────┐
-│                    Docker Compose                        │
+│                 docker-compose.yml                        │
 ├─────────────────────────────────────────────────────────┤
 │                                                         │
-│  ┌─────────┐      ┌──────────┐      ┌─────────────┐    │
-│  │   n8n   │ ───→ │ postgres │      │ prometheus  │    │
-│  │  :5678  │      │  :5432   │      │   :9090     │    │
-│  └─────────┘      └──────────┘      └──────┬──────┘    │
-│       │                                     │           │
-│       │           ┌──────────┐              │           │
-│       └─────────→ │ grafana  │ ←────────────┘           │
-│                   │  :3000   │                          │
-│                   └──────────┘                          │
+│  ┌─────────┐      ┌──────────────┐                      │
+│  │   n8n   │ ───→ │ config-server│                      │
+│  │  :5678  │      │    :3001     │                      │
+│  └─────────┘      └──────────────┘                      │
 │                                                         │
+└─────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────┐
+│           monitoring/docker-compose.yml（可选）          │
+├─────────────────────────────────────────────────────────┤
+│  ┌─────────────┐      ┌──────────┐                     │
+│  │ prometheus  │ ───→ │ grafana  │                     │
+│  │   :9090     │      │  :3000   │                     │
+│  └─────────────┘      └──────────┘                     │
 └─────────────────────────────────────────────────────────┘
 ```
 
@@ -365,10 +380,10 @@ services:
 
 | 服务 | Volume | 说明 |
 |------|--------|------|
-| n8n | n8n_data | 工作流数据 |
-| postgres | postgres_data | 数据库 |
-| prometheus | prometheus_data | 监控数据 |
-| grafana | grafana_data | 仪表盘配置 |
+| n8n | `${HOME}/.n8n` | 工作流数据（SQLite + 执行数据） |
+| config-server | `./config` | 配置文件（关键词/源头策略） |
+| prometheus | `prometheus_data` | 监控数据（监控栈 compose 内） |
+| grafana | `grafana_data` | 仪表盘配置（监控栈 compose 内） |
 
 ---
 
@@ -389,7 +404,12 @@ x-daily-pack/
 │   ├── ai-quality-gate.js        # AI质量守门
 │   ├── rag-enhanced-rank.js      # RAG增强评分
 │   ├── metrics-collector.js      # 指标收集
-│   └── config-server.js          # 配置服务
+│   ├── config-server.js          # 配置服务
+│   ├── deploy_daily_pack.py      # 同步代码节点与调度 ⭐
+│   ├── drift_check_daily_pack.py # 漂移检测（cron + 代码节点）⭐
+│   ├── probe_daily_pack.py       # 健康探针 ⭐
+│   ├── probe_daily_pack_notify.py# 巡检告警（去重+冷却）⭐
+│   └── trigger_daily_pack.py     # 手工触发 + 验证 ⭐
 │
 ├── monitoring/                   # 监控配置
 │   ├── docker-compose.yml        # 监控服务
@@ -406,6 +426,8 @@ x-daily-pack/
 ├── docs/                         # 文档
 │   ├── ARCHITECTURE.md           # 架构文档
 │   ├── SECURITY.md               # 安全文档
+│   ├── RUNBOOK.md                # 生产运维主入口 ⭐
+│   ├── OPERATIONS.md             # 运维手册（对齐 Runbook）
 │   └── plans/                    # 实施计划
 │
 ├── .github/workflows/            # CI/CD
@@ -424,6 +446,7 @@ x-daily-pack/
 
 | 版本 | 日期 | 变更 |
 |------|------|------|
+| v5-fixed | 2026-01-27 | Runbook/Probe/Drift-Check 固化，运维入口标准化 |
 | v5-fixed | 2026-01-25 | Phase 1-4 全部完成，安全加固 |
 | v5 | 2026-01-24 | Phase 3 智能化增强 |
 | v4 | 2026-01-23 | Phase 2 多维度评分 |

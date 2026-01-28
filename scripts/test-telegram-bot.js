@@ -3,7 +3,7 @@
  * Telegram Bot Test Script
  *
  * Usage:
- *   1. First, send any message to your bot (@AIFrontlineBot) in Telegram
+ *   1. First, send any message to your bot (@<your-bot-username>) in Telegram
  *   2. Run: node scripts/test-telegram-bot.js
  *   3. This will show you the chat_id to use
  *
@@ -13,7 +13,11 @@
  *   3. Run this script to get the group's chat_id
  */
 
-const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN || 'REDACTED_TELEGRAM_BOT_TOKEN';
+const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
+if (!TELEGRAM_BOT_TOKEN) {
+  console.error('Missing TELEGRAM_BOT_TOKEN. Set it in your environment before running.');
+  process.exit(1);
+}
 
 async function getUpdates() {
   const url = `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/getUpdates`;
@@ -33,13 +37,13 @@ async function getUpdates() {
       console.log('');
       console.log('📱 For PRIVATE chat (1-on-1 with bot):');
       console.log('   1. Open Telegram');
-      console.log('   2. Search for @AIFrontlineBot');
+      console.log('   2. Search for @<your-bot-username>');
       console.log('   3. Send any message (like "hello")');
       console.log('   4. Run this script again');
       console.log('');
       console.log('👥 For GROUP chat:');
       console.log('   1. Create a Telegram group or use existing one');
-      console.log('   2. Add @AIFrontlineBot to the group');
+      console.log('   2. Add @<your-bot-username> to the group');
       console.log('   3. Send a message in the group');
       console.log('   4. Run this script again');
       console.log('');

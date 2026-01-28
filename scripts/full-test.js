@@ -17,12 +17,22 @@ const fs = require('fs');
 const path = require('path');
 
 // 配置
-const N8N_URL = 'http://localhost:5678';
-const N8N_API_KEY = process.env.N8N_API_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJlOTk5ODlmMS1iMDUwLTQwYTUtYWE2Yy00NDUwMjU0YWIwZmQiLCJpc3MiOiJuOG4iLCJhdWQiOiJwdWJsaWMtYXBpIiwiaWF0IjoxNzY4OTUxMzc0fQ.KQ7gd05MbFuRvEhJBgcZx_QibjfD8uCEUqfiDNEMWdI';
-const EMAIL = process.env.N8N_UI_EMAIL || 'info@zynovexllc.com';
-const PASSWORD = process.env.N8N_UI_PASSWORD || 'admin123';
+const N8N_URL = process.env.N8N_URL || 'http://localhost:5678';
+const N8N_API_KEY = process.env.N8N_API_KEY;
+const EMAIL = process.env.N8N_UI_EMAIL;
+const PASSWORD = process.env.N8N_UI_PASSWORD;
 const WORKFLOW_NAME = 'X Daily Pack v5';
-const WORKFLOW_ID = '3985NLMYbEPFwzOf';
+const WORKFLOW_ID = process.env.N8N_WORKFLOW_ID;
+
+if (!N8N_API_KEY) {
+  throw new Error('Missing N8N_API_KEY. Export it before running.');
+}
+if (!EMAIL || !PASSWORD) {
+  throw new Error('Missing N8N_UI_EMAIL or N8N_UI_PASSWORD. Export them before running.');
+}
+if (!WORKFLOW_ID) {
+  throw new Error('Missing N8N_WORKFLOW_ID. Export it before running.');
+}
 
 const LOG_DIR = path.join(__dirname, '../logs/tests');
 const LOG_FILE = path.join(LOG_DIR, `test-${new Date().toISOString().replace(/[:.]/g, '-')}.log`);

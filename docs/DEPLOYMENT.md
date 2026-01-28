@@ -1,5 +1,7 @@
 # 部署指南
 
+> 最新运维入口：`docs/RUNBOOK.md`
+
 ## 第一步：获取必需的 API Keys
 
 ### 1.1 OpenAI API Key
@@ -7,7 +9,7 @@
 1. 访问 https://platform.openai.com/api-keys
 2. 登录你的 OpenAI 账号
 3. 点击 "Create new secret key"
-4. 复制 key（格式：`sk-...`）
+4. 复制 key（例如：`<your-openai-api-key>`）
 5. 充值至少 $5-10（用于测试）
 
 **预估成本**：每天运行一次约 $0.10-0.50
@@ -24,7 +26,7 @@
    - `chat:write.public`
    - （用于审批轮询）`channels:read`, `channels:history`, `groups:read`, `groups:history`
 7. 点击 "Install to Workspace"
-8. 复制 "Bot User OAuth Token"（格式：`xoxb-...`）
+8. 复制 "Bot User OAuth Token"（例如：`<your-slack-bot-token>`）
 
 ### 1.3 Slack Channel ID
 
@@ -50,9 +52,9 @@ nano .env
 
 填入你的 keys：
 ```
-OPENAI_API_KEY=sk-your-actual-key-here
-SLACK_BOT_TOKEN=xoxb-your-actual-token-here
-SLACK_CHANNEL_ID=C1234567890
+OPENAI_API_KEY=<your-openai-api-key>
+SLACK_BOT_TOKEN=<your-slack-bot-token>
+SLACK_CHANNEL_ID=<your-slack-channel-id>
 RUBE_MCP_URL=https://rube.app/mcp
 RUBE_AUTH_TOKEN=your-rube-token-here
 ```
@@ -60,18 +62,14 @@ RUBE_AUTH_TOKEN=your-rube-token-here
 ## 第三步：启动 n8n
 
 ```bash
-docker run -d \
-  --name n8n \
-  -p 5678:5678 \
-  -v ~/.n8n:/home/node/.n8n \
-  --env-file /home/henry/x/.env \
-  n8nio/n8n
+cd /home/henry/x
+docker compose up -d
+docker compose ps
 ```
 
 验证启动：
 ```bash
-docker ps | grep n8n
-docker logs n8n
+docker compose logs --tail 100 n8n
 ```
 
 ## 第四步：导入 Workflow
@@ -94,6 +92,16 @@ docker logs n8n
 
 ## 第六步：测试运行
 
+推荐使用脚本做 API/日志级验证（可重复自动化）：
+
+```bash
+npm run deploy
+npm run drift-check
+npm run probe
+npm run trigger:webhook
+```
+
+如果你仍想在 UI 中手动执行：
 1. 点击 "Execute Workflow" 按钮
 2. 查看执行结果
 3. 检查 Slack 频道是否收到消息
@@ -110,13 +118,28 @@ docker logs n8n
 ## 故障排查
 
 ### 问题：n8n 无法读取环境变量
-**解决**：确保 Docker 启动时使用了 `--env-file` 参数
+**解决**：确保 `docker compose up -d` 且 `.env` 已存在
 
 ### 问题：Slack 消息发送失败
 **解决**：
 1. 检查 Bot Token 是否正确
 2. 确认 Bot 已被邀请到频道
 3. 检查 Bot 权限是否包含 `chat:write`
+4. 运行 `npm run probe` 查看 `slack_last_success_ok` 与 `message_ts`
+
+---
+
+## 生产运行推荐顺序（固定流程）
+
+```bash
+cd /home/henry/x
+docker compose up -d
+
+npm run deploy
+npm run drift-check
+npm run probe
+npm run trigger:webhook
+```
 
 ### 问题：OpenAI API 调用失败
 **解决**：

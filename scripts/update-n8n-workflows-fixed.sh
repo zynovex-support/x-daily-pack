@@ -2,9 +2,13 @@
 # Quick update script for n8n workflows
 set -e
 
-# Use the correct API key from test-workflow-api.sh
-API_KEY="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJlOTk5ODlmMS1iMDUwLTQwYTUtYWE2Yy00NDUwMjU0YWIwZmQiLCJpc3MiOiJuOG4iLCJhdWQiOiJwdWJsaWMtYXBpIiwiaWF0IjoxNzY4OTUxMzc0fQ.KQ7gd05MbFuRvEhJBgcZx_QibjfD8uCEUqfiDNEMWdI"
+API_KEY="${N8N_API_KEY:-}"
 N8N_URL="${N8N_URL:-http://localhost:5678}"
+
+if [ -z "$API_KEY" ]; then
+  echo "❌ Missing N8N_API_KEY. Export it before running."
+  exit 1
+fi
 
 echo "======================================"
 echo "n8n Workflow Updater"

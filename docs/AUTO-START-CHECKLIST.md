@@ -2,6 +2,18 @@
 
 ## ✅ 配置完成检查（2026-01-20）
 
+## 状态更新（2026-01-27）
+
+- 当前推荐的运行态验证已经脚本化：
+
+```bash
+cd /home/henry/x
+npm run drift-check
+npm run probe
+```
+
+- 详细运维顺序见：`docs/RUNBOOK.md`
+
 ### 核心配置
 
 - [x] **Docker 容器重启策略**
@@ -23,10 +35,17 @@
   # 应输出: enabled
   ```
 
-- [x] **docker-compose 配置**
+- [x] **docker compose 配置**
   ```bash
   ls /home/henry/x/docker-compose.yml
   # 文件应存在
+  ```
+
+- [x] **运行态脚本（推荐）**
+  ```bash
+  cd /home/henry/x
+  npm run drift-check
+  npm run probe
   ```
 
 ### 系统级配置
@@ -139,8 +158,8 @@ echo "Watchdog: $(systemctl --user is-active n8n-watchdog.timer)"
 # 方式1: Docker 命令（推荐）
 docker restart n8n-local
 
-# 方式2: docker-compose
-cd /home/henry/x && docker-compose restart
+# 方式2: docker compose
+cd /home/henry/x && docker compose restart n8n config-server
 
 # 方式3: systemd watchdog（手动触发检查）
 systemctl --user start n8n-watchdog.service
@@ -236,7 +255,7 @@ systemctl --user start n8n-watchdog.timer
 | 场景 | 其他项目 | n8n (本配置) |
 |-----|---------|-------------|
 | 开发时执行 `docker stop $(docker ps -q)` | 全部停止 | ✅ 30秒内自动恢复 |
-| 执行 `docker-compose down` 误删 | 需要手动重启 | ✅ 30秒内自动恢复 |
+| 执行 `docker compose down` 误删 | 需要手动重启 | ✅ 30秒内自动恢复 |
 | 容器崩溃 | 可能停止 | ✅ 立即自动重启 |
 | 系统重启 | 需要手动启动 | ✅ 自动启动 |
 | 数据库容器 | 常驻但无保护 | ✅ 四层防护 |

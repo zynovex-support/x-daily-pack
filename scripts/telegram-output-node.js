@@ -1,8 +1,8 @@
 // Telegram Output Node - Sends daily pack summary to Telegram
 // Parallel output alongside Slack - requires TELEGRAM_ENABLED=true
 
-const telegramToken = $env.TELEGRAM_BOT_TOKEN;
-const chatId = $env.TELEGRAM_CHAT_ID;
+const telegramToken = $env.TELEGRAM_DAILY_BOT_TOKEN;
+const chatId = $env.TELEGRAM_DAILY_CHAT_ID;
 const enabled = String($env.TELEGRAM_ENABLED || '').toLowerCase() === 'true';
 const strictMode = String($env.TELEGRAM_STRICT || 'true').toLowerCase() !== 'false';
 
@@ -13,7 +13,7 @@ if (!enabled) {
 }
 
 if (!telegramToken || !chatId) {
-  throw new Error('Telegram: Missing TELEGRAM_BOT_TOKEN or TELEGRAM_CHAT_ID');
+  throw new Error('Telegram: Missing TELEGRAM_DAILY_BOT_TOKEN or TELEGRAM_DAILY_CHAT_ID');
 }
 
 const data = $input.first().json;

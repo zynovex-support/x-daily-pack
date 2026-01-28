@@ -7,6 +7,18 @@
 
 ---
 
+## 状态更新（2026-01-27）
+
+- 当前测试主入口已对齐为 Vitest + npm scripts：
+  - `npm test`
+  - `npm run test:unit`
+  - `npm run test:integration`
+  - `npm run test:e2e`
+- 文中涉及 `run-all.js` 的部分为历史状态描述
+- 当前测试规模：70 tests（外部网络偶发波动）
+
+---
+
 ## 执行摘要
 
 ### 总体评估

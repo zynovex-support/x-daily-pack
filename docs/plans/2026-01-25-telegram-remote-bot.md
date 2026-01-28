@@ -10,6 +10,13 @@
 
 ---
 
+## 状态更新（2026-01-27）
+
+- 当前生产环境使用 `TELEGRAM_DAILY_BOT_TOKEN` / `TELEGRAM_DAILY_CHAT_ID`
+- 本文档为历史方案，涉及旧变量名时请以 daily 变量名为准
+
+---
+
 ## 一、需求分析
 
 ### 1.1 使用场景
@@ -157,7 +164,7 @@ Layer 5: 输出限制 (防止敏感信息泄露)
 
 | 配置项 | 说明 | 示例 |
 |--------|------|------|
-| TELEGRAM_BOT_TOKEN | Bot Token | 从 BotFather 获取 |
+| TELEGRAM_DAILY_BOT_TOKEN | Bot Token | 从 BotFather 获取 |
 | ALLOWED_USER_IDS | 允许的用户 ID | 123456789,987654321 |
 | MAX_OUTPUT_LENGTH | 最大输出长度 | 4000 |
 | COMMAND_TIMEOUT | 命令超时 | 60000 (ms) |
@@ -230,7 +237,7 @@ import dotenv from 'dotenv';
 dotenv.config();
 
 export const config = {
-  token: process.env.TELEGRAM_BOT_TOKEN,
+  token: process.env.TELEGRAM_DAILY_BOT_TOKEN,
   allowedUsers: (process.env.ALLOWED_USER_IDS || '')
     .split(',')
     .map(id => parseInt(id.trim()))
@@ -245,7 +252,7 @@ export const config = {
 
 添加:
 ```
-TELEGRAM_BOT_TOKEN=your-bot-token
+TELEGRAM_DAILY_BOT_TOKEN=your-bot-token
 ALLOWED_USER_IDS=123456789
 MAX_OUTPUT_LENGTH=4000
 COMMAND_TIMEOUT=60000

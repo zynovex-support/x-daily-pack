@@ -32,7 +32,12 @@ scripts/
 ├── ai-quality-gate.js          # AI质量守门 ⭐ Phase 4
 ├── rag-enhanced-rank.js        # RAG增强评分 ⭐ Phase 4
 ├── metrics-collector.js        # 指标收集 ⭐ Phase 4
-└── config-server.js            # 配置服务 (API Key认证)
+├── config-server.js            # 配置服务 (API Key认证)
+├── deploy_daily_pack.py        # 同步代码节点与调度 ⭐
+├── drift_check_daily_pack.py   # 漂移检测（cron + 代码节点）⭐
+├── probe_daily_pack.py         # 健康探针 ⭐
+├── probe_daily_pack_notify.py  # 巡检告警（去重+冷却）⭐
+└── trigger_daily_pack.py       # 手工触发 + 验证 ⭐
 
 monitoring/
 ├── docker-compose.yml          # Prometheus + Grafana
@@ -57,6 +62,13 @@ docker compose up -d  # 启动
 docker compose down   # 停止
 docker compose restart n8n
 
+# Runbook（强烈推荐固定顺序）
+npm run deploy
+npm run drift-check
+npm run probe
+npm run trigger:webhook
+npm run probe:notify
+
 # 监控
 cd monitoring && docker compose up -d  # 启动监控
 cd monitoring && docker compose down   # 停止监控
@@ -79,6 +91,8 @@ cd monitoring && docker compose down   # 停止监控
 4. Webhook 必须配置 Header Auth 认证
 5. Config Server 必须配置 API Key 认证
 6. `N8N_BLOCK_ENV_ACCESS_IN_NODE=true` 必须启用
+
+> 现状说明（2026-01-27）: 生产仍为 `N8N_BLOCK_ENV_ACCESS_IN_NODE=false`（$env 依赖较多），属于已知风险与迁移未完成项；运维以 `docs/RUNBOOK.md` 为准。
 
 ## 安全配置
 

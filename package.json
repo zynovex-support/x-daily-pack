@@ -4,6 +4,13 @@
   "description": "AI Daily News Automation System",
   "type": "module",
   "scripts": {
+    "deploy": "python3 scripts/deploy_daily_pack.py",
+    "probe": "python3 scripts/probe_daily_pack.py",
+    "drift-check": "python3 scripts/drift_check_daily_pack.py",
+    "probe:notify": "python3 scripts/probe_daily_pack_notify.py",
+    "probe:notify:send": "python3 scripts/probe_daily_pack_notify.py --send --notify-on-warnings",
+    "trigger": "python3 scripts/trigger_daily_pack.py",
+    "trigger:webhook": "python3 scripts/trigger_daily_pack.py --trigger webhook",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:unit": "vitest run tests/suites/unit",

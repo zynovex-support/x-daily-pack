@@ -11,14 +11,17 @@ if (!rubeToken) {
 // 默认账号查询 (fallback)
 const DEFAULT_ACCOUNT_QUERY = 'from:AnthropicAI OR from:OpenAI OR from:LangChainAI OR from:hwchase17 OR from:karpathy OR from:sama OR from:ylecun OR from:goodside OR from:simonw OR from:swyx OR from:nvidia OR from:awscloud OR from:Microsoft OR from:GoogleAI OR from:ycombinator -is:retweet -giveaway -airdrop';
 
-// 从配置服务器获取查询
+// 从配置服务器获取查询（带 API Key 认证）
 const CONFIG_URL = $env.CONFIG_SERVER_URL || 'http://localhost:3001';
+const CONFIG_API_KEY = $env.CONFIG_API_KEY;
+const configHeaders = CONFIG_API_KEY ? { 'X-API-Key': CONFIG_API_KEY } : undefined;
 let accountQuery = DEFAULT_ACCOUNT_QUERY;
 
 try {
   const configResp = await this.helpers.httpRequest({
     method: 'GET',
     url: `${CONFIG_URL}/queries/x-accounts`,
+    headers: configHeaders,
     timeout: 5000
   });
   const data = typeof configResp === 'string' ? JSON.parse(configResp) : configResp;

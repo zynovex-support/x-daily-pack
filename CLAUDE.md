@@ -1,7 +1,7 @@
 # X Daily Pack - 项目总结 (CLAUDE.md)
 
-**最后更新**: 2026-01-25
-**项目状态**: ✅ Phase 1-4 全部完成 + 安全加固
+**最后更新**: 2026-01-27
+**项目状态**: ✅ Phase 1-4 完成 + 运维 Runbook 已固化
 **版本**: v5-fixed (18节点主流程 + 4节点审批流程)
 **仓库**: https://github.com/zynovex-support/x-daily-pack
 
@@ -11,6 +11,26 @@
 
 **项目名称**: X Daily Pack
 **目标**: AI 行业日报 - 自动采集、去重、评分、推送内容到 Slack/Telegram，并支持编辑后发布到 X/Twitter
+
+## ✅ 运维主入口（当前最重要）
+
+推荐固定顺序（全部 API/日志级可复现）：
+
+```bash
+npm run deploy
+npm run drift-check
+npm run probe
+npm run trigger:webhook
+```
+
+巡检告警入口：
+
+```bash
+npm run probe:notify
+npm run probe:notify:send
+```
+
+详细说明见：`docs/RUNBOOK.md`
 
 ## 🎯 核心功能
 
@@ -69,9 +89,9 @@
 - **反馈学习**: 用户偏好权重
 
 ### Phase 4: 监控可观测性
-- **Prometheus**: 指标收集
-- **Grafana**: 可视化仪表盘
-- **告警**: 工作流超时、API过载、质量下降
+- **Probe Runbook**: `probe` / `probe:notify` / `drift-check`（当前主入口）
+- **Prometheus/Grafana**: 监控栈配置已存在（但 `/metrics` 默认未打通）
+- **告警**: 建议使用 `probe:notify:send` + cron 先落地
 
 ## 📁 文件结构
 
@@ -84,7 +104,12 @@ scripts/
 ├── rag-enhanced-rank.js        # RAG增强评分 ⭐ Phase 4
 ├── metrics-collector.js        # 指标收集 ⭐ Phase 4
 ├── llm-rank-node.js            # LLM评分
-└── config-server.js            # 配置服务
+├── config-server.js            # 配置服务
+├── deploy_daily_pack.py        # 同步代码节点/调度 ⭐
+├── drift_check_daily_pack.py   # 漂移检测 ⭐
+├── probe_daily_pack.py         # 健康探针 ⭐
+├── probe_daily_pack_notify.py  # 巡检告警（去重+冷却）⭐
+└── trigger_daily_pack.py       # 手工触发 + 验证 ⭐
 
 monitoring/
 ├── docker-compose.yml          # 监控服务 ⭐ Phase 4
@@ -100,39 +125,62 @@ tests/
     └── metrics.test.ts         # 指标测试
 ```
 
+```text
+docs/
+├── RUNBOOK.md                  # 生产运维主入口 ⭐
+└── OPERATIONS.md               # 运维手册（对齐 Runbook）
+```
+
 ## ⚙️ 环境变量
 
 ```bash
 # OpenAI
-OPENAI_API_KEY=sk-...
+OPENAI_API_KEY=<your-openai-api-key>
 OPENAI_MODEL=gpt-4o-mini
 
 # Slack
-SLACK_BOT_TOKEN=xoxb-...
-SLACK_CHANNEL_ID=C0XXXXXXXXX
+SLACK_BOT_TOKEN=<your-slack-bot-token>
+SLACK_CHANNEL_ID=<your-slack-channel-id>
+
+# Telegram
+TELEGRAM_DAILY_BOT_TOKEN=<your-telegram-bot-token>
+TELEGRAM_DAILY_CHAT_ID=<your-telegram-chat-id>
+
+# Runbook / n8n API
+N8N_API_KEY=<your-n8n-api-key>
+EXPECTED_DAILY_PACK_CRON=0 0,12 * * *
+
+# Probe knobs
+PROBE_MAX_SUCCESS_AGE_HOURS=18
+PROBE_MIN_SUCCESS_RATE=0.7
+PROBE_NOTIFY_COOLDOWN_MINUTES=120
+
+# Multi News API 强降级护栏（可选）
+NEWS_API_MAX_APIS_PER_RUN=5
+NEWS_API_OVERALL_BUDGET_MS=25000
 
 # Phase 3
 EVENT_CLUSTERING_ENABLED=true
 FEEDBACK_LEARNING_ENABLED=true
 
-# Phase 4 安全
+# 安全相关
 WEBHOOK_SECRET=your-webhook-secret
 CONFIG_API_KEY=your-api-key
 ALLOWED_ORIGINS=https://your-domain.com
-N8N_BLOCK_ENV_ACCESS_IN_NODE=true
+N8N_BLOCK_ENV_ACCESS_IN_NODE=false  # 当前兼容 $env；目标是 true
 ```
 
 ## 🧪 测试
 
 ### 测试框架
-- **Vitest**: 现代测试框架，60个测试用例
+- **Vitest**: 现代测试框架，70个测试用例（受外网波动影响）
 - **MSW**: Mock Service Worker，API模拟
 - **Promptfoo**: LLM输出质量测试
 
 ### 测试命令
 ```bash
 npm test              # 运行所有测试
-npm run test:unit     # 单元测试 (38个)
+npm run test:unit     # 单元测试 (48个)
 npm run test:coverage # 覆盖率报告
 npm run test:ai       # Promptfoo AI测试
 ```
@@ -150,4 +198,4 @@ tests/
 
 ---
 
-**最后更新**: 2026-01-25 | Phase 1-4 完成 + 安全加固 + 监控可观测性
+**最后更新**: 2026-01-27 | Runbook/Probe/Drift-Check 已固化

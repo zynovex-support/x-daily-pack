@@ -6,6 +6,27 @@
 
 ---
 
+## 状态更新（2026-01-27）
+
+本计划中的多项内容已经部分落地，当前运行态建议以 runbook 为准：
+
+- 运维主入口：`docs/RUNBOOK.md`
+- 标准顺序：
+  - `npm run deploy`
+  - `npm run drift-check`
+  - `npm run probe`
+
+已对齐的关键点：
+- Webhook Header Auth 已启用
+- Config Server API Key 校验已启用，调用端已带 `X-API-Key`
+- runner 请求等待超时已提升到 300s
+
+仍需持续跟踪：
+- `N8N_BLOCK_ENV_ACCESS_IN_NODE=true` 仍未落地（$env 依赖较多）
+- 建议轮换 `WEBHOOK_SECRET`（建议同时轮换 `N8N_API_KEY`）
+
+---
+
 ## 一、执行摘要
 
 基于 Codex 审计报告和验证结果，本计划分4个阶段实施：
@@ -406,11 +427,11 @@ services:
 
 | 指标名 | 类型 | 描述 | 告警阈值 |
 |--------|------|------|----------|
-| `workflow_duration_seconds` | Histogram | 执行时长 | > 300s |
+| `workflow_duration_seconds_sum` | Counter | 执行总时长（秒） | 增量 > 300s |
 | `openai_api_calls_total` | Counter | API 调用次数 | > 100/h |
 | `openai_api_cost_usd` | Gauge | API 成本 | > $5/day |
 | `content_processed_total` | Counter | 处理内容数 | - |
-| `content_quality_score` | Gauge | 质量分数 | < 15 |
+| `content_quality_score_avg` | Gauge | 平均质量分数 | < 15 |
 
 ### 5.4 Phase 4 验收标准
 

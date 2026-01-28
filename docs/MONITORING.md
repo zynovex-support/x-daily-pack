@@ -1,7 +1,7 @@
 # X Daily Pack - 监控指南
 
 **版本**: v1.0
-**最后更新**: 2026-01-25
+**最后更新**: 2026-01-27
 
 ---
 
@@ -35,7 +35,33 @@
 
 ---
 
-## 二、快速启动
+## 二、生产监控主入口（当前推荐）
+
+当前生产环境的“可复现监控主入口”是探针脚本（API/日志级证据）：
+
+```bash
+npm run drift-check
+npm run probe
+npm run probe:notify
+```
+
+如果需要自动告警（建议配 cron）：
+
+```bash
+npm run probe:notify:send
+```
+
+建议 cron（每 15 分钟）：
+
+```bash
+*/15 * * * * cd /home/henry/x && npm run probe:notify:send >> logs/probe-notify.log 2>&1
+```
+
+更多细节见：`docs/RUNBOOK.md`
+
+---
+
+## 三、快速启动
 
 ### 2.1 启动监控服务
 
@@ -50,6 +76,8 @@ docker compose up -d
 docker compose ps
 ```
 
+> 注意：Prometheus/Grafana 目前属于“可选监控栈”。默认情况下 n8n/config-server 未暴露 `/metrics`。
+
 ### 2.2 访问地址
 
 | 服务 | 地址 | 默认凭据 |
@@ -59,7 +87,7 @@ docker compose ps
 
 ---
 
-## 三、监控指标
+## 四、监控指标
 
 ### 3.1 工作流指标
 
@@ -90,7 +118,7 @@ docker compose ps
 
 ---
 
-## 四、告警规则
+## 五、告警规则
 
 ### 4.1 已配置告警
 
@@ -108,7 +136,7 @@ groups:
   - name: x-daily-pack
     rules:
       - alert: WorkflowExecutionSlow
-        expr: workflow_duration_seconds > 300
+        expr: increase(workflow_duration_seconds_sum[5m]) > 300
         for: 5m
         labels:
           severity: warning
@@ -124,7 +152,7 @@ groups:
           summary: "OpenAI API 调用频率过高"
 
       - alert: LowContentQuality
-        expr: avg(content_quality_score) < 15
+        expr: avg(content_quality_score_avg) < 15
         for: 30m
         labels:
           severity: info
@@ -134,7 +162,7 @@ groups:
 
 ---
 
-## 五、Prometheus 配置
+## 六、Prometheus 配置
 
 ### 5.1 抓取配置
 
@@ -174,7 +202,7 @@ rate(errors_total[1h])
 
 ---
 
-## 六、Grafana 配置
+## 七、Grafana 配置
 
 ### 6.1 添加数据源
 
@@ -195,7 +223,7 @@ rate(errors_total[1h])
 
 ---
 
-## 七、指标收集器
+## 八、指标收集器
 
 ### 7.1 使用方法
 
@@ -220,11 +248,14 @@ const output = metrics.getPrometheusMetrics();
 
 ### 7.2 指标端点
 
-Config Server 暴露 `/metrics` 端点，返回 Prometheus 格式数据。
+当前运行态说明（2026-01-27）：
+- `scripts/metrics-collector.js` 已实现 Prometheus 文本输出
+- 但 n8n / config-server 默认未暴露 `/metrics`
+- 因此生产侧监控优先使用 `npm run probe` / `npm run probe:notify:send`
 
 ---
 
-## 八、运维操作
+## 九、运维操作
 
 ### 8.1 查看服务状态
 
@@ -256,13 +287,13 @@ docker compose restart prometheus
 
 ---
 
-## 九、故障排查
+## 十、故障排查
 
 ### 9.1 Prometheus 无数据
 
 1. 检查目标状态: http://localhost:9090/targets
-2. 确认服务可达: `curl http://n8n:5678/metrics`
-3. 检查网络: 确保容器在同一网络
+2. 当前默认并无 `/metrics`：建议先跑 `npm run probe`
+3. 若要使用 Prometheus：需要先实现并暴露 `/metrics`
 
 ### 9.2 Grafana 无法连接
 

@@ -6,12 +6,25 @@
 ## 配置状态
 ✅ **已完成并测试通过**
 
+## 状态更新（2026-01-27）
+
+- 当前仓库以 `docker compose` 为主入口（不再使用 `docker-compose` 命令）
+- n8n 镜像固定为 `n8nio/n8n:1.123.17`
+- 建议每次重启/重建后执行 runbook：
+
+```bash
+cd /home/henry/x
+npm run deploy
+npm run drift-check
+npm run probe
+```
+
 ## 问题诊断
 
 ### 发现的问题
 1. Docker 容器重启策略为 `"no"`，不会开机自启
 2. 没有 systemd 服务配置
-3. 没有 docker-compose 配置文件
+3. 没有 docker compose 配置文件
 4. 容器在检查时处于停止状态
 
 ### 潜在风险
@@ -47,17 +60,15 @@ docker update --restart=always n8n-local
 - Docker 原生支持
 - 无额外依赖
 
-### 方案二：docker-compose 配置（推荐方式）
+### 方案二：docker compose 配置（推荐方式）
 
 **文件位置：** `/home/henry/x/docker-compose.yml`
 
-**配置内容：**
+**配置内容（对齐当前仓库）**：
 ```yaml
-version: '3.8'
-
 services:
   n8n:
-    image: n8nio/n8n:latest
+    image: n8nio/n8n:1.123.17
     container_name: n8n-local
     restart: always  # 开机自启关键配置
     ports:
@@ -67,14 +78,23 @@ services:
     env_file:
       - .env
     environment:
-      - TZ=Asia/Shanghai
+      - TZ=UTC
       - N8N_BLOCK_ENV_ACCESS_IN_NODE=false
+      - N8N_RUNNERS_ENABLED=true
+      - N8N_RUNNERS_MODE=internal
+      - N8N_RUNNERS_TASK_TIMEOUT=300
+      - N8N_RUNNERS_TASK_REQUEST_TIMEOUT=300
     healthcheck:
       test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:5678/healthz"]
       interval: 30s
       timeout: 10s
       retries: 3
       start_period: 40s
+
+  config-server:
+    image: node:18-alpine
+    container_name: config-server
+    restart: always
 ```
 
 **使用方法：**
@@ -82,16 +102,16 @@ services:
 cd /home/henry/x
 
 # 启动
-docker-compose up -d
+docker compose up -d
 
 # 停止
-docker-compose down
+docker compose down
 
 # 重启
-docker-compose restart
+docker compose restart n8n config-server
 
 # 查看日志
-docker-compose logs -f
+docker compose logs -f n8n
 ```
 
 **优点：**
@@ -128,7 +148,7 @@ ExecStart=/bin/bash -c '\
   else \
     echo "[$(date)] n8n container does not exist, creating it..."; \
     docker run -d --name $CONTAINER_NAME --restart=always -p 5678:5678 \
-      -v /home/henry/.n8n:/home/node/.n8n --env-file /home/henry/x/.env n8nio/n8n:latest; \
+      -v /home/henry/.n8n:/home/node/.n8n --env-file /home/henry/x/.env n8nio/n8n:1.123.17; \
   fi'
 
 StandardOutput=journal
@@ -194,14 +214,14 @@ Type=oneshot
 RemainAfterExit=yes
 WorkingDirectory=/home/henry/x
 
-ExecStartPre=/usr/bin/docker pull n8nio/n8n:latest
+ExecStartPre=/usr/bin/docker pull n8nio/n8n:1.123.17
 ExecStart=/usr/bin/docker start n8n-local || /usr/bin/docker run -d \
   --name n8n-local \
   --restart=always \
   -p 5678:5678 \
   -v /home/henry/.n8n:/home/node/.n8n \
   --env-file /home/henry/x/.env \
-  n8nio/n8n:latest
+  n8nio/n8n:1.123.17
 
 ExecStop=/usr/bin/docker stop n8n-local
 
@@ -325,12 +345,17 @@ docker logs --tail 100 n8n-local
 ```
 
 ### 重新部署（推荐）
-使用 docker-compose：
+使用 docker compose：
 ```bash
 cd /home/henry/x
-docker-compose down
-docker-compose pull
-docker-compose up -d
+docker compose down
+docker compose pull
+docker compose up -d
+
+# 对齐 live workflow（强烈推荐）
+npm run deploy
+npm run drift-check
+npm run probe
 ```
 
 ### 紧急恢复
@@ -343,7 +368,7 @@ systemctl --user restart n8n-docker.service
 
 已更新以下文档：
 - ✅ `docs/OPERATIONS.md` - 添加开机自启动配置说明
-- ✅ 创建 `docker-compose.yml` - 规范化部署配置
+- ✅ 创建 `docker-compose.yml` - 规范化部署配置（使用 `docker compose`）
 - ✅ 创建 `~/.config/systemd/user/n8n-docker.service` - systemd 服务
 - ✅ 创建本文档 `docs/AUTO-START-SETUP.md`
 
@@ -360,7 +385,7 @@ systemctl --user restart n8n-docker.service
 
 3. **环境变量更新**
    - 修改 `.env` 后需重启容器：`docker restart n8n-local`
-   - 或使用 docker-compose：`docker-compose restart`
+   - 或使用 docker compose：`docker compose restart n8n config-server`
 
 4. **日志监控**
    ```bash
@@ -389,7 +414,7 @@ systemctl --user restart n8n-docker.service
    - 系统启动时确保容器存在
    - 备用保障机制
 
-4. **第四层：docker-compose 配置（规范化）**
+4. **第四层：docker compose 配置（规范化）**
    - 配置即代码，易于管理
    - 支持健康检查
 

@@ -1,8 +1,13 @@
 #!/bin/bash
 # n8n Workflow Full Test Script
 
-API_KEY="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJlOTk5ODlmMS1iMDUwLTQwYTUtYWE2Yy00NDUwMjU0YWIwZmQiLCJpc3MiOiJuOG4iLCJhdWQiOiJwdWJsaWMtYXBpIiwiaWF0IjoxNzY4OTUxMzc0fQ.KQ7gd05MbFuRvEhJBgcZx_QibjfD8uCEUqfiDNEMWdI"
+API_KEY="${N8N_API_KEY:-}"
 BASE_URL="http://localhost:5678/api/v1"
+
+if [ -z "$API_KEY" ]; then
+  echo "❌ Missing N8N_API_KEY. Export it before running."
+  exit 1
+fi
 
 echo "========== n8n Workflow Test =========="
 echo "Time: $(date)"

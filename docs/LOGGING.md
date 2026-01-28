@@ -32,18 +32,27 @@ Recommendation:
 - Increase retention for critical workflows (30-90 days).
 - Run cleanup daily via cron or a scheduled task.
 
+Current status note (2026-01-27):
+- The pruning script is currently CommonJS-style (`require(...)`)
+- Because `package.json` uses `"type": "module"`, the script may fail at runtime
+- Check `logs/n8n-prune.log` before assuming retention automation is working
+
 ## Automation (Current Setup)
 
-- Daily cleanup is scheduled via cron.
-- Schedule: `0 3 * * *` (local time)
-- Retention: 14 days
+- A cron job may exist, but recent logs show the prune script failing under ESM.
+- Treat pruning automation as "needs verification" until the script is migrated or renamed.
 - Log output: `logs/n8n-prune.log`
-- Environment: `N8N_API_KEY` must be present in `.env`
 
 To verify:
 ```
 crontab -l | rg prune-n8n-executions
 tail -n 50 logs/n8n-prune.log
+```
+
+For run health, prefer the probe-based runbook:
+```
+npm run probe
+npm run probe:notify
 ```
 
 ## Next Steps (Optional Enhancements)

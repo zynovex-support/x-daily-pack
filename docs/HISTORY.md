@@ -2,6 +2,36 @@
 
 本文件记录关键里程碑与“踩坑/修复”历史，便于未来会话快速定位上下文。
 
+## 2026-01-26 ~ 2026-01-27：运行态修复与运维固化
+
+### 症状：到点/手动触发时偶发“没有消息”
+
+定位到三类主因：
+1) 调度漂移（live cron 与仓库不一致）  
+2) Code node runner 请求排队超时（60s timeout）  
+3) Config Server 开启 API Key，但调用端未带 `X-API-Key`
+
+### 关键修复与固化动作
+
+- 调度与代码节点“脚本化管理”：
+  - 新增：`deploy_daily_pack.py` / `drift_check_daily_pack.py` / `probe_daily_pack.py` / `trigger_daily_pack.py`
+  - 固化为 npm 入口：`npm run deploy` / `npm run drift-check` / `npm run probe` / `npm run trigger:webhook`
+- 可观测性主入口转为探针：
+  - 新增：`probe_daily_pack_notify.py`（去重 + 冷却窗口）
+  - 建议 cron：`npm run probe:notify:send`
+- 稳定性改造（不改变主流程语义）：
+  - Config Server 调用补齐 `X-API-Key`
+  - `Multi News API` 收敛超时/重试并加入强降级护栏（可调）
+  - runner 请求等待超时提升为 300s（`N8N_RUNNERS_TASK_REQUEST_TIMEOUT=300`）
+- 文档对齐：
+  - 新增并推广 `docs/RUNBOOK.md`
+  - 入口文档统一指向 runbook + npm 脚本
+
+### 当前已知未完成项（仍需跟踪）
+
+- 建议轮换：`WEBHOOK_SECRET`（建议同时轮换 `N8N_API_KEY`）
+- 安全基线迁移：`N8N_BLOCK_ENV_ACCESS_IN_NODE=true` 仍未落地（$env 依赖较多）
+
 ## 2026-01-18：项目启动与方案确定
 
 - 决策：使用 Slack 私密频道 `#x-daily-pack` 承载每日 pack（便于复盘与协作）。
@@ -45,4 +75,3 @@
 - 引入多份 Perplexity 输出报告（文件在仓库根目录，见 `docs/ASSETS.md`）。
 - 发现问题：报告可能混淆 “网页 403 / RSS 可用性 / 站点是否关停”，且大量条目缺乏可执行验证。
 - 决策：后续源头策略以“可复现审计表”（脚本/抽样）为准，避免单次 LLM 报告误导。
-

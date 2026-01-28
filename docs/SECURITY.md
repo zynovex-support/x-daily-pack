@@ -1,7 +1,7 @@
 # X Daily Pack - 安全指南
 
 **版本**: v2.0
-**最后更新**: 2026-01-25
+**最后更新**: 2026-01-27
 
 ---
 
@@ -16,7 +16,7 @@
 │                                                             │
 │  API 请求 ──→ [API Key Auth] ──→ Config Server              │
 │                                                             │
-│  n8n 节点 ──→ [Env Isolation] ──→ 禁止访问环境变量          │
+│  n8n 节点 ──→ [Env Access Control] ──→ 逐步收敛 $env 访问   │
 │                                                             │
 │  代码提交 ──→ [CI Security] ──→ Snyk + Semgrep 扫描         │
 │                                                             │
@@ -62,16 +62,15 @@ curl http://localhost:3001/config \
 
 ### 3.1 n8n 节点隔离
 
-**配置**: `N8N_BLOCK_ENV_ACCESS_IN_NODE=true`
+**目标配置**: `N8N_BLOCK_ENV_ACCESS_IN_NODE=true`
 
-**效果**: 禁止 Code 节点通过 `process.env` 访问环境变量
+**效果**: 禁止 Code 节点通过 `process.env` / `$env` 访问环境变量
+
+**当前状态（2026-01-27）**:
+- 生产配置仍为 `N8N_BLOCK_ENV_ACCESS_IN_NODE=false`（原因：大量 Code 节点依赖 `$env`）
+- 这属于“已知风险 + 迁移未完成”状态，应作为后续安全改造项跟踪
 
 **位置**: `docker-compose.yml`
-
-```yaml
-environment:
-  - N8N_BLOCK_ENV_ACCESS_IN_NODE=true
-```
 
 ### 3.2 CORS 限制
 
@@ -91,13 +90,37 @@ environment:
 | CONFIG_API_KEY | Config Server | .env |
 | OPENAI_API_KEY | OpenAI API | .env |
 | SLACK_BOT_TOKEN | Slack 推送 | .env |
-| TELEGRAM_BOT_TOKEN | Telegram 推送 | .env |
+| TELEGRAM_DAILY_BOT_TOKEN | Telegram 推送 | .env |
+| TELEGRAM_DAILY_CHAT_ID | Telegram 推送 | .env |
+| N8N_API_KEY | n8n API 认证 | .env |
 
 ### 4.2 密钥规范
 
 - `.env` 已在 `.gitignore` 中忽略
 - 文档中禁止粘贴真实密钥
-- 示例使用占位符（`sk-...`、`xoxb-...`）
+- 示例使用占位符（`<openai-api-key>`、`<slack-bot-token>`）
+
+### 4.3 密钥轮换（高优先级 Runbook）
+
+在排障过程中，`WEBHOOK_SECRET` 曾在失败命令输出中暴露过（虽未写入仓库）。
+建议立即轮换：
+
+- `WEBHOOK_SECRET`
+-（建议同时轮换）`N8N_API_KEY`
+
+推荐顺序（全部可用 API/日志验证）：
+
+```bash
+# 1) 更新 .env（并在 n8n UI 中同步更新 Webhook Header Auth credential）
+# 2) 重启服务加载新配置
+docker compose up -d --force-recreate n8n config-server
+
+# 3) 同步与验证
+npm run deploy
+npm run drift-check
+npm run probe
+npm run trigger:webhook
+```
 
 ---
 
@@ -161,9 +184,12 @@ environment:
 - [ ] `.env` 文件已配置所有密钥
 - [ ] `WEBHOOK_SECRET` 已设置强密码
 - [ ] `CONFIG_API_KEY` 已设置强密码
-- [ ] `N8N_BLOCK_ENV_ACCESS_IN_NODE=true`
+- [ ] `N8N_API_KEY` 已设置强密码
+- [ ] （目标）`N8N_BLOCK_ENV_ACCESS_IN_NODE=true`（当前仍为 false）
 - [ ] `ALLOWED_ORIGINS` 已限制域名
 - [ ] n8n Credential 已创建
+- [ ] 已执行 `npm run drift-check`
+- [ ] 已执行 `npm run probe`
 
 ### 运行时检查
 
@@ -171,3 +197,4 @@ environment:
 - [ ] Config Server 认证正常工作
 - [ ] CI 安全扫描通过
 - [ ] npm audit 无高危漏洞
+- [ ] 巡检告警已配置（建议 `npm run probe:notify:send` + cron）

@@ -153,14 +153,17 @@ const DEFAULT_QUERIES = [
   'xAI OR Grok OR Perplexity'
 ];
 
-// 从配置服务器获取查询
+// 从配置服务器获取查询（带 API Key 认证）
 const CONFIG_URL = $env.CONFIG_SERVER_URL || 'http://localhost:3001';
+const CONFIG_API_KEY = $env.CONFIG_API_KEY;
+const configHeaders = CONFIG_API_KEY ? { 'X-API-Key': CONFIG_API_KEY } : undefined;
 let queries = DEFAULT_QUERIES;
 
 try {
   const configResp = await this.helpers.httpRequest({
     method: 'GET',
     url: `${CONFIG_URL}/queries/news-api`,
+    headers: configHeaders,
     timeout: 5000
   });
   const data = typeof configResp === 'string' ? JSON.parse(configResp) : configResp;
@@ -175,9 +178,10 @@ try {
 // 每个API只执行一个查询，轮流分配以节省额度
 const getQueryForApi = (apiIndex) => queries[apiIndex % queries.length];
 
-// 重试配置
-const maxRetries = Number.parseInt($env.NEWS_API_RETRY_MAX_ATTEMPTS || '3', 10);
-const retryDelayMs = Number.parseInt($env.NEWS_API_RETRY_INITIAL_DELAY_MS || '500', 10);
+// 重试与超时配置（缩短单节点最坏耗时，降低 runner 排队超时风险）
+const maxRetries = Number.parseInt($env.NEWS_API_RETRY_MAX_ATTEMPTS || '2', 10);
+const retryDelayMs = Number.parseInt($env.NEWS_API_RETRY_INITIAL_DELAY_MS || '400', 10);
+const requestTimeoutMs = Number.parseInt($env.NEWS_API_REQUEST_TIMEOUT_MS || '10000', 10);
 
 // Exponential backoff retry function
 const retryWithBackoff = async (fn, maxAttempts = maxRetries, initialDelayMs = retryDelayMs) => {
@@ -209,18 +213,45 @@ if (enabledApis.length === 0) {
   return [];
 }
 
+// 强降级护栏：限制单次运行的 API 数量与总预算时间（默认尽量不改变行为）
+const maxApisPerRunRaw = Number.parseInt($env.NEWS_API_MAX_APIS_PER_RUN || String(enabledApis.length), 10);
+const maxApisPerRun = Number.isFinite(maxApisPerRunRaw)
+  ? Math.max(1, Math.min(enabledApis.length, maxApisPerRunRaw))
+  : enabledApis.length;
+const apisToRun = enabledApis.slice(0, maxApisPerRun);
+if (apisToRun.length < enabledApis.length) {
+  console.log(`[NewsAPI] Limiting APIs per run: ${apisToRun.length}/${enabledApis.length}`);
+}
+
+const overallBudgetMsRaw = Number.parseInt($env.NEWS_API_OVERALL_BUDGET_MS || '25000', 10);
+const overallBudgetMs = Number.isFinite(overallBudgetMsRaw) ? Math.max(5000, overallBudgetMsRaw) : 25000;
+const budgetDeadline = Date.now() + overallBudgetMs;
+const remainingBudgetMs = () => Math.max(0, budgetDeadline - Date.now());
+
 // 并行请求所有API
-const fetchPromises = enabledApis.map(async ([id, config], index) => {
+const fetchPromises = apisToRun.map(async ([id, config], index) => {
   const query = getQueryForApi(index);
   const url = config.buildUrl(config.key, query);
 
   try {
+    const remainingAtStart = remainingBudgetMs();
+    if (remainingAtStart < 1500) {
+      const message = `budget exhausted before request (${remainingAtStart}ms left)`;
+      stats.apis[id] = { success: false, error: message, query, budget_ms_left: remainingAtStart };
+      return { id, articles: [], error: message };
+    }
+
+    const perApiTimeoutMs = Math.min(
+      requestTimeoutMs,
+      Math.max(1000, remainingAtStart - 400),
+    );
+
     const response = await retryWithBackoff(async () => {
       return await this.helpers.httpRequest({
         method: 'GET',
         url: url,
         headers: config.headers(),
-        timeout: 15000,
+        timeout: perApiTimeoutMs,
         returnFullResponse: false
       });
     });
@@ -232,15 +263,34 @@ const fetchPromises = enabledApis.map(async ([id, config], index) => {
     }
 
     const articles = config.parseResponse(data);
-    stats.apis[id] = { success: true, count: articles.length, query };
+    stats.apis[id] = {
+      success: true,
+      count: articles.length,
+      query,
+      timeout_ms: perApiTimeoutMs,
+      budget_ms_left: remainingBudgetMs(),
+    };
     return { id, articles, error: null };
   } catch (error) {
-    stats.apis[id] = { success: false, error: error.message };
+    stats.apis[id] = {
+      success: false,
+      error: error.message,
+      query,
+      budget_ms_left: remainingBudgetMs(),
+    };
     return { id, articles: [], error: error.message };
   }
 });
 
-const results = await Promise.all(fetchPromises);
+// allSettled 避免单个 promise 异常导致整批失败
+const settledResults = await Promise.allSettled(fetchPromises);
+const results = settledResults.map((result, index) => {
+  if (result.status === 'fulfilled') return result.value;
+  const [id] = apisToRun[index];
+  const message = result.reason?.message || String(result.reason || 'unknown error');
+  stats.apis[id] = { success: false, error: message };
+  return { id, articles: [], error: message };
+});
 
 // 收集结果
 results.forEach(result => {
@@ -265,11 +315,14 @@ const uniqueArticles = allArticles.filter(article => {
 });
 
 // 日志统计
-stats.total_apis = enabledApis.length;
+stats.total_apis_enabled = enabledApis.length;
+stats.total_apis = apisToRun.length;
 stats.successful_apis = results.filter(r => !r.error).length;
 stats.total_articles = allArticles.length;
 stats.unique_articles = uniqueArticles.length;
 stats.errors = errors;
+stats.overall_budget_ms = overallBudgetMs;
+stats.budget_ms_left = remainingBudgetMs();
 
 console.log('Multi News API Stats:', JSON.stringify(stats));
 
