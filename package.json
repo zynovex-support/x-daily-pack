@@ -28,7 +28,7 @@
     "@vitest/ui": "^4.0.18",
     "dotenv": "^16.4.0",
     "msw": "^2.6.0",
-    "promptfoo": "^0.120.17",
+    "promptfoo": "^0.120.20",
     "vitest": "^4.0.18"
   },
   "engines": {
