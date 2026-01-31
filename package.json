@@ -35,7 +35,7 @@
     "node": ">=18.0.0"
   },
   "dependencies": {
-    "@langchain/core": "^1.1.17",
+    "@langchain/core": "^1.1.18",
     "@langchain/openai": "^1.2.3",
     "langchain": "^1.2.13"
   }
