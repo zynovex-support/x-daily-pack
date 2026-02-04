@@ -17,6 +17,14 @@ const MAX_EMBEDDINGS = Number.parseInt($env.SEMANTIC_DEDUPE_MAX_EMBEDDINGS || '5
 const EMBEDDING_MODEL = $env.SEMANTIC_DEDUPE_MODEL || 'text-embedding-3-small';
 const BATCH_SIZE = Number.parseInt($env.SEMANTIC_DEDUPE_BATCH_SIZE || '20', 10);
 const DEBUG = $env.SEMANTIC_DEDUPE_DEBUG === 'true';
+const FILE_STORE_ENABLED = String($env.SEMANTIC_DEDUPE_FILE_STORE || 'true').toLowerCase() !== 'false';
+const FILE_STORE_PATH = $env.SEMANTIC_DEDUPE_STORE_PATH || '/home/node/.n8n/x-daily-pack-embeddings.json';
+
+const safeRequire = (name) => {
+  try { return require(name); } catch (err) { return null; }
+};
+const fs = safeRequire('fs');
+const path = safeRequire('path');
 
 if (!apiKey) {
   console.log('Warning: Missing OPENAI_API_KEY, skipping semantic dedupe');
@@ -107,24 +115,78 @@ const chunk = (arr, size) => {
 
 // ============== 存储管理 ==============
 
+const normalizeStore = (store) => {
+  if (!store || typeof store !== 'object') return { embeddings: [] };
+  if (!Array.isArray(store.embeddings)) store.embeddings = [];
+  return store;
+};
+
+const loadFileStore = () => {
+  if (!FILE_STORE_ENABLED || !fs) return null;
+  try {
+    if (!fs.existsSync(FILE_STORE_PATH)) return { embeddings: [] };
+    const raw = fs.readFileSync(FILE_STORE_PATH, 'utf8');
+    if (!raw) return { embeddings: [] };
+    return normalizeStore(JSON.parse(raw));
+  } catch (err) {
+    console.log(`[Semantic Dedupe] File store load failed: ${err.message}`);
+    return { embeddings: [] };
+  }
+};
+
+const saveFileStore = (store) => {
+  if (!FILE_STORE_ENABLED || !fs) return false;
+  try {
+    const dir = path ? path.dirname(FILE_STORE_PATH) : FILE_STORE_PATH.split('/').slice(0, -1).join('/');
+    if (dir) fs.mkdirSync(dir, { recursive: true });
+    const tmpPath = `${FILE_STORE_PATH}.tmp`;
+    fs.writeFileSync(tmpPath, JSON.stringify(store));
+    fs.renameSync(tmpPath, FILE_STORE_PATH);
+    return true;
+  } catch (err) {
+    console.log(`[Semantic Dedupe] File store save failed: ${err.message}`);
+    return false;
+  }
+};
+
+const mergeEmbeddings = (base, incoming) => {
+  const map = new Map();
+  (base || []).forEach((entry) => {
+    if (!entry || !entry.id) return;
+    map.set(entry.id, entry);
+  });
+  (incoming || []).forEach((entry) => {
+    if (!entry || !entry.id || !Array.isArray(entry.embedding)) return;
+    const existing = map.get(entry.id);
+    if (!existing || (entry.timestamp || 0) > (existing.timestamp || 0)) {
+      map.set(entry.id, entry);
+    }
+  });
+  return Array.from(map.values());
+};
+
 let storage = { embeddings: [] };
-let storageMode = 'staticData';
+let storageMode = 'volatile';
+let staticData = null;
 
 try {
-  const staticData = this.getWorkflowStaticData
+  staticData = this.getWorkflowStaticData
     ? this.getWorkflowStaticData('global')
     : this.helpers?.getWorkflowStaticData?.call(this, 'global');
-  if (!staticData) {
-    storageMode = 'volatile';
-  } else {
+  if (staticData) {
     if (!staticData.semanticEmbeddings) staticData.semanticEmbeddings = [];
-    storage = { embeddings: staticData.semanticEmbeddings };
-    // 保持引用以便后续更新
+    storage = normalizeStore({ embeddings: staticData.semanticEmbeddings });
     storage._staticData = staticData;
+    storageMode = 'staticData';
   }
 } catch (err) {
-  storageMode = 'volatile';
-  storage = { embeddings: [] };
+  staticData = null;
+}
+
+const fileStore = loadFileStore();
+if (fileStore) {
+  storage.embeddings = mergeEmbeddings(storage.embeddings, fileStore.embeddings);
+  storageMode = staticData ? 'staticData+file' : 'file';
 }
 
 const now = Date.now();
@@ -260,7 +322,9 @@ const stats = {
   expired_cleaned: expiredCount,
   total_stored_embeddings: storage.embeddings.length,
   storage_mode: storageMode,
-  embedding_model: EMBEDDING_MODEL
+  embedding_model: EMBEDDING_MODEL,
+  file_store_enabled: FILE_STORE_ENABLED,
+  file_store_saved: fileStore ? saveFileStore({ embeddings: storage.embeddings }) : false
 };
 
 console.log('Semantic Dedupe Stats:', JSON.stringify(stats));

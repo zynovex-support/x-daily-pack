@@ -5,6 +5,9 @@ const telegramToken = $env.TELEGRAM_DAILY_BOT_TOKEN;
 const chatId = $env.TELEGRAM_DAILY_CHAT_ID;
 const enabled = String($env.TELEGRAM_ENABLED || '').toLowerCase() === 'true';
 const strictMode = String($env.TELEGRAM_STRICT || 'true').toLowerCase() !== 'false';
+const MAX_LENGTH = Number.parseInt($env.TELEGRAM_MAX_LENGTH || '4096', 10);
+const RETRY_MAX = Number.parseInt($env.TELEGRAM_RETRY_MAX || '3', 10);
+const RETRY_BASE_MS = Number.parseInt($env.TELEGRAM_RETRY_BASE_MS || '800', 10);
 
 // Skip if not enabled or missing config
 if (!enabled) {
@@ -65,54 +68,100 @@ const bestTweet = tweets.hot_take?.text || tweets.framework?.text || tweets.case
 const bestTweetText = escapeHtml(`${bestTweet.substring(0, 250)}${bestTweet.length > 250 ? '...' : ''}`);
 const highlightsBlock = highlightsText || '<i>今日无重大变动</i>';
 
-const message = `📦 <b>AI Frontline Daily</b>
-<i>${escapeHtml(new Date().toLocaleDateString('zh-CN', { timeZone: 'Asia/Shanghai' }))}</i>
+const sections = [
+  `📦 <b>AI Frontline Daily</b>\n<i>${escapeHtml(new Date().toLocaleDateString('zh-CN', { timeZone: 'Asia/Shanghai' }))}</i>`,
+  '━━━━━━━━━━━━━━━━━━',
+  `🔥 <b>今日亮点</b>\n\n${highlightsBlock}`,
+  '━━━━━━━━━━━━━━━━━━',
+  `✍️ <b>推荐推文</b>\n\n<pre>${bestTweetText}</pre>`,
+  '━━━━━━━━━━━━━━━━━━',
+  `📊 候选: ${stats.total_candidates || 0} | 平均分: ${stats.avg_score || 0}/30\n🔗 完整审阅请查看 Slack`
+];
 
-━━━━━━━━━━━━━━━━━━
+const stripHtml = (value) => String(value || '').replace(/<[^>]*>/g, '');
 
-🔥 <b>今日亮点</b>
+const buildMessages = (parts, maxLen) => {
+  const messages = [];
+  let current = '';
+  parts.forEach((part) => {
+    const chunk = current ? `${current}\n\n${part}` : part;
+    if (chunk.length <= maxLen) {
+      current = chunk;
+      return;
+    }
+    if (current) messages.push(current);
+    if (part.length <= maxLen) {
+      current = part;
+    } else {
+      const safePart = escapeHtml(stripHtml(part));
+      messages.push(safePart.slice(0, maxLen - 1) + '…');
+      current = '';
+    }
+  });
+  if (current) messages.push(current);
+  return messages;
+};
 
-${highlightsBlock}
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
-━━━━━━━━━━━━━━━━━━
+const sendWithRetry = async (text, index, total) => {
+  let lastError = null;
+  for (let attempt = 1; attempt <= RETRY_MAX; attempt += 1) {
+    try {
+      const response = await this.helpers.httpRequest({
+        method: 'POST',
+        url: `https://api.telegram.org/bot${telegramToken}/sendMessage`,
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: {
+          chat_id: chatId,
+          text,
+          parse_mode: 'HTML',
+          disable_web_page_preview: false
+        },
+        throwHttpErrors: false
+      });
 
-✍️ <b>推荐推文</b>
+      if (response?.ok) {
+        return { ok: true, response };
+      }
 
-<pre>${bestTweetText}</pre>
+      const code = response?.error_code || response?.statusCode || 'unknown';
+      const desc = response?.description || response?.message || 'Unknown error';
+      const retriable = [429, 500, 502, 503, 504].includes(Number(code));
+      lastError = new Error(`Telegram API error ${code}: ${desc} (segment ${index}/${total})`);
 
-━━━━━━━━━━━━━━━━━━
-
-📊 候选: ${stats.total_candidates || 0} | 平均分: ${stats.avg_score || 0}/30
-🔗 完整审阅请查看 Slack`;
+      if (!retriable || attempt === RETRY_MAX) break;
+      await sleep(RETRY_BASE_MS * attempt);
+    } catch (error) {
+      lastError = error;
+      if (attempt === RETRY_MAX) break;
+      await sleep(RETRY_BASE_MS * attempt);
+    }
+  }
+  return { ok: false, error: lastError };
+};
 
 try {
-  const response = await this.helpers.httpRequest({
-    method: 'POST',
-    url: `https://api.telegram.org/bot${telegramToken}/sendMessage`,
-    headers: {
-      'Content-Type': 'application/json'
-    },
-    body: {
-      chat_id: chatId,
-      text: message,
-      parse_mode: 'HTML',
-      disable_web_page_preview: false
-    },
-    throwHttpErrors: false
-  });
-
-  if (!response?.ok) {
-    const code = response?.error_code || response?.statusCode || 'unknown';
-    const desc = response?.description || response?.message || 'Unknown error';
-    throw new Error(`Telegram API error ${code}: ${desc}`);
+  const messages = buildMessages(sections, MAX_LENGTH);
+  const messageIds = [];
+  for (let i = 0; i < messages.length; i += 1) {
+    const result = await sendWithRetry(messages[i], i + 1, messages.length);
+    if (!result.ok) {
+      throw result.error;
+    }
+    const msgId = result.response?.result?.message_id;
+    if (msgId) messageIds.push(msgId);
   }
 
-  console.log('Telegram: Message sent successfully');
+  console.log(`Telegram: Message sent successfully (${messages.length} segment(s))`);
   return [{
     json: {
       telegram: 'sent',
-      message_id: response.result?.message_id,
-      chat_id: chatId
+      message_ids: messageIds,
+      chat_id: chatId,
+      segments: messages.length
     }
   }];
 } catch (error) {
